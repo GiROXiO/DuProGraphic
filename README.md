@@ -17,7 +17,7 @@ Sigan estos pasos para levantar el proyecto en sus máquinas locales:
 
 1. **Clonar el repositorio:**
    git clone <URL_DEL_REPOSITORIO>
-   cd red_profesional_grafos
+   cd DuProGraphic
 
 2. **Crear y activar el entorno virtual:**
    python -m venv venv
