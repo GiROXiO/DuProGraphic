@@ -1,3 +1,5 @@
+// Usuarios con contactos en común
+
 MATCH (u1:Usuario)-[:CONECTA_CON]-(comun:Usuario)-[:CONECTA_CON]-(u2:Usuario)
 WHERE u1.id < u2.id
 RETURN
