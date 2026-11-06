@@ -1,5 +1,50 @@
 import streamlit as st
-from backend_core.connection import get_db_connection
+from backend_core.connection import get_db_connection, invalidar_cache_datos
+
+
+OPCIONES_OFERTA = {
+    "estado": ["abierta", "cerrada"],
+    "modalidad": ["remoto", "híbrido", "presencial"],
+    "nivel_experiencia": ["Junior", "Semi-Senior", "Senior"],
+}
+
+
+def _campo_entidad(etiqueta, propiedad, nombre, key, valor=None):
+    opciones = OPCIONES_OFERTA.get(propiedad) if etiqueta == "Oferta" else None
+    if not opciones:
+        return st.text_input(nombre, value=valor or "", key=key)
+    opciones = list(opciones)
+    if valor not in (None, "") and valor not in opciones:
+        opciones.insert(0, valor)
+        st.warning(f"El valor actual de {nombre.lower()} no está entre las opciones válidas; selecciona uno permitido.")
+    indice = opciones.index(valor) if valor in opciones else 0
+    return st.selectbox(nombre, opciones, index=indice, key=key)
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def _cargar_registros_cacheados(etiqueta):
+    if etiqueta not in {"Usuario", "Empresa", "Oferta"}:
+        raise ValueError("Tipo de entidad no permitido.")
+    conn = get_db_connection()
+    if conn is None or conn.driver is None:
+        raise ConnectionError("No se pudo conectar con Neo4j.")
+    with conn.driver.session() as session:
+        return session.run(
+            f"""
+            MATCH (n:{etiqueta})
+            RETURN n.id AS id, properties(n) AS datos,
+                   coalesce(n.nombre, n.titulo, n.id) AS nombre
+            ORDER BY nombre
+            """
+        ).data()
+
+
+def _cargar_registros(etiqueta):
+    try:
+        return _cargar_registros_cacheados(etiqueta)
+    except Exception as error:
+        st.error(f"No se pudieron cargar los registros: {error}")
+        return None
 
 def renderizar_creacion():
     st.subheader("Registrar entidad")
@@ -40,7 +85,12 @@ def renderizar_creacion():
         valores = {}
 
         for propiedad, etiqueta_campo in config["campos"].items():
-            valores[propiedad] = st.text_input(etiqueta_campo,key=f"crear_{etiqueta}_{propiedad}",)
+            valores[propiedad] = _campo_entidad(
+                etiqueta,
+                propiedad,
+                etiqueta_campo,
+                key=f"crear_{etiqueta}_{propiedad}",
+            )
 
         guardar = st.form_submit_button("Guardar")
 
@@ -52,6 +102,11 @@ def renderizar_creacion():
         for propiedad, valor in valores.items()
     }
 
+    if etiqueta == "Oferta":
+        for propiedad, opciones in OPCIONES_OFERTA.items():
+            if valores_limpios[propiedad] not in opciones:
+                st.warning(f"Selecciona un valor válido para {propiedad.replace('_', ' ')}.")
+                return
     if not entidad_id.strip() or any(not valor for valor in valores_limpios.values()):
         st.warning("Completa todos los campos.")
         return
@@ -82,6 +137,7 @@ def renderizar_creacion():
             ).single()
 
         if resultado:
+            invalidar_cache_datos()
             st.success(f"{etiqueta} registrado con ID {resultado['id']}.")
         else:
             st.error("Neo4j no confirmó la creación del registro.")
@@ -98,29 +154,15 @@ def renderizar_lectura():
     }
     seleccion = st.selectbox("Entidad que quieres consultar", list(entidades.keys()), key="entidad_lectura",)
 
-    conn = get_db_connection()
-
-    if conn is None or conn.driver is None:
-        st.error("No se pudo conectar con Neo4j. Revisa la conexión.")
-        return
-
     etiqueta = entidades[seleccion]
-    consulta = f"""MATCH (n:{etiqueta}) RETURN properties(n) AS registro ORDER BY coalesce(n.nombre, n.titulo, n.id)"""
-
-    try:
-        with conn.driver.session() as session:
-            registros = [
-                fila["registro"]
-                for fila in session.run(consulta)
-            ]
-
-        if registros:
-            st.dataframe(registros, use_container_width=True)
-        else:
-            st.info(f"No hay registros de {seleccion.lower()} todavía.")
-
-    except Exception:
-        st.error("No se pudieron consultar los datos de Neo4j.")
+    filas = _cargar_registros(etiqueta)
+    if filas is None:
+        return
+    registros = [fila["datos"] for fila in filas]
+    if registros:
+        st.dataframe(registros, width="stretch", hide_index=True)
+    else:
+        st.info(f"No hay registros de {seleccion.lower()} todavía.")
 
 
 def limpiar_campos_actualizacion():
@@ -162,16 +204,8 @@ def renderizar_actualizacion():
     config = entidades[seleccion]
     etiqueta = config["label"]
 
-    conn = get_db_connection()
-    if conn is None or conn.driver is None:
-        st.error("No se pudo conectar con Neo4j.")
-        return
-
-    try:
-        with conn.driver.session() as session:
-            filas = session.run(f"""MATCH (n:{etiqueta}) RETURN n.id AS id, properties(n) AS datos ORDER BY n.id""").data()
-    except Exception:
-        st.error("No se pudieron cargar los registros.")
+    filas = _cargar_registros(etiqueta)
+    if filas is None:
         return
 
     datos_por_id = {str(fila["id"]): fila["datos"] for fila in filas}
@@ -188,7 +222,13 @@ def renderizar_actualizacion():
         valores = {}
 
         for propiedad, etiqueta_campo in config["campos"].items():
-            valores[propiedad] = st.text_input(etiqueta_campo, value=str(datos.get(propiedad, "")), key=f"form_actualizacion_campo_{etiqueta}_{id_actual}_{propiedad}",)
+            valores[propiedad] = _campo_entidad(
+                etiqueta,
+                propiedad,
+                etiqueta_campo,
+                key=f"form_actualizacion_campo_{etiqueta}_{id_actual}_{propiedad}",
+                valor=str(datos.get(propiedad, "")),
+            )
             
 
         guardar = st.form_submit_button("Guardar cambios")
@@ -200,6 +240,11 @@ def renderizar_actualizacion():
         st.warning("Completa todos los campos.")
         return
 
+    if etiqueta == "Oferta":
+        for propiedad, opciones in OPCIONES_OFERTA.items():
+            if valores[propiedad] not in opciones:
+                st.warning(f"Selecciona un valor válido para {propiedad.replace('_', ' ')}.")
+                return
     asignaciones = ", ".join(
         f"n.{propiedad} = ${propiedad}"
         for propiedad in config["campos"]
@@ -212,6 +257,10 @@ def renderizar_actualizacion():
         **{clave: valor.strip() for clave, valor in valores.items()},
     }
 
+    conn = get_db_connection()
+    if conn is None or conn.driver is None:
+        st.error("No se pudo conectar con Neo4j.")
+        return
     try:
         with conn.driver.session() as session:
             if id_nuevo.strip() != id_actual:
@@ -226,6 +275,7 @@ def renderizar_actualizacion():
             resultado = session.run(consulta, parametros).single()
 
         if resultado:
+            invalidar_cache_datos()
             st.success(f"Registro actualizado con ID {resultado['id']}.")
         else:
             st.warning("No se encontró el registro que querías actualizar.")
@@ -249,22 +299,8 @@ def renderizar_eliminacion():
     )
     etiqueta = entidades[seleccion]
 
-    conn = get_db_connection()
-    if conn is None or conn.driver is None:
-        st.error("No se pudo conectar con Neo4j.")
-        return
-
-    try:
-        with conn.driver.session() as session:
-            filas = session.run(
-                f"""
-                MATCH (n:{etiqueta})
-                RETURN n.id AS id, coalesce(n.nombre, n.titulo, n.id) AS nombre
-                ORDER BY nombre
-                """
-            ).data()
-    except Exception:
-        st.error("No se pudieron cargar los registros.")
+    filas = _cargar_registros(etiqueta)
+    if filas is None:
         return
 
     nombres_por_id = {
@@ -303,6 +339,10 @@ def renderizar_eliminacion():
     ):
         return
 
+    conn = get_db_connection()
+    if conn is None or conn.driver is None:
+        st.error("No se pudo conectar con Neo4j.")
+        return
     try:
         with conn.driver.session() as session:
             if etiqueta == "Empresa":
@@ -328,6 +368,7 @@ def renderizar_eliminacion():
                 id=id_eliminar,
             ).consume()
 
+        invalidar_cache_datos()
         st.success(f"Registro {id_eliminar} eliminado.")
 
     except Exception:

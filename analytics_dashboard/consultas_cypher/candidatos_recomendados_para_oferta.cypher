@@ -1,6 +1,8 @@
 // Parámetro requerido: $oferta_id
 // Recomienda candidatos con habilidades requeridas y contactos conectados a postulantes.
 MATCH (oferta:Oferta {id: $oferta_id})
+WHERE toLower(trim(coalesce(oferta.estado, ''))) = 'abierta'
+  AND EXISTS { MATCH (:Empresa)-[:PUBLICA]->(oferta) }
 OPTIONAL MATCH (oferta)-[:REQUIERE]->(requerida:Habilidad)
 WITH oferta, collect(DISTINCT requerida) AS habilidades_requeridas
 MATCH (candidato:Usuario)

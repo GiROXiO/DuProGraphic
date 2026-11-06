@@ -1,7 +1,7 @@
 from datetime import date
 
 import streamlit as st
-from backend_core.connection import get_db_connection
+from backend_core.connection import get_db_connection, invalidar_cache_datos
 
 
 ETIQUETAS = {
@@ -21,33 +21,49 @@ def _conexion():
     return conn
 
 
-def _opciones(etiqueta):
-    """Devuelve IDs y nombres para los selectores, usando etiquetas controladas."""
-    conn = _conexion()
-    if conn is None:
-        return None
+@st.cache_data(ttl=15, show_spinner=False)
+def _opciones_cacheadas(etiqueta, solo_publicadas=False):
+    conn = get_db_connection()
+    if conn is None or conn.driver is None:
+        raise ConnectionError("No se pudo conectar con Neo4j.")
+    filtro_publicacion = (
+        "MATCH (:Empresa)-[:PUBLICA]->(n)"
+        if solo_publicadas and etiqueta == "Oferta"
+        else ""
+    )
+    with conn.driver.session() as session:
+        filas = session.run(
+            f"""
+            MATCH (n:{etiqueta})
+            {filtro_publicacion}
+            RETURN DISTINCT n.id AS id, coalesce(n.nombre, n.titulo, n.id) AS nombre
+            ORDER BY nombre
+            """
+        ).data()
+    return {str(fila["id"]): str(fila["nombre"]) for fila in filas}
 
+
+def _opciones(etiqueta, solo_publicadas=False):
+    """Devuelve IDs y nombres para los selectores, usando etiquetas controladas."""
+    if etiqueta not in ETIQUETAS.values():
+        st.error("Tipo de entidad no permitido.")
+        return None
     try:
-        with conn.driver.session() as session:
-            filas = session.run(
-                f"""
-                MATCH (n:{etiqueta})
-                RETURN n.id AS id, coalesce(n.nombre, n.titulo, n.id) AS nombre
-                ORDER BY nombre
-                """
-            ).data()
-        return {str(fila["id"]): str(fila["nombre"]) for fila in filas}
+        return _opciones_cacheadas(etiqueta, solo_publicadas)
     except Exception as error:
         st.error(f"No se pudieron cargar los registros: {error}")
         return None
 
 
-def _selector(etiqueta, titulo, clave):
-    opciones = _opciones(etiqueta)
+def _selector(etiqueta, titulo, clave, solo_publicadas=False):
+    opciones = _opciones(etiqueta, solo_publicadas=solo_publicadas)
     if opciones is None:
         return None
     if not opciones:
-        st.warning(f"No hay registros de {etiqueta} para seleccionar.")
+        if solo_publicadas and etiqueta == "Oferta":
+            st.warning("No hay ofertas publicadas disponibles para seleccionar.")
+        else:
+            st.warning(f"No hay registros de {etiqueta} para seleccionar.")
         return None
     return st.selectbox(
         titulo,
@@ -64,7 +80,10 @@ def _ejecutar(consulta, **parametros):
     try:
         with conn.driver.session() as session:
             resultado = session.run(consulta, **parametros).single()
-        return resultado is not None and resultado["ok"]
+        ok = resultado is not None and resultado["ok"]
+        if ok:
+            invalidar_cache_datos()
+        return ok
     except Exception as error:
         st.error(f"Neo4j no pudo completar la operación: {error}")
         return False
@@ -78,6 +97,7 @@ def renderizar_vinculaciones():
             "Asignar habilidad a usuario",
             "Vincular usuario con empresa",
             "Vincular usuario con proyecto",
+            "Publicar oferta desde empresa",
             "Asociar habilidad requerida a oferta",
         ],
         key="tipo_vinculacion",
@@ -109,6 +129,11 @@ def renderizar_vinculaciones():
             rol = st.text_input("Rol en el proyecto")
             enviar = st.form_submit_button("Guardar participación")
 
+        elif tipo == "Publicar oferta desde empresa":
+            empresa = _selector("Empresa", "Empresa", "publicar_empresa")
+            oferta = _selector("Oferta", "Oferta", "publicar_oferta")
+            fecha_publicacion = st.date_input("Fecha de publicación", value=date.today())
+            enviar = st.form_submit_button("Publicar oferta")
         else:
             oferta = _selector("Oferta", "Oferta", "requisito_oferta")
             habilidad = _selector("Habilidad", "Habilidad requerida", "requisito_habilidad")
@@ -144,6 +169,8 @@ def renderizar_vinculaciones():
                     usuario_b=usuario_b,
                     fuerza=fuerza,
                 ).single()
+            if resultado is not None:
+                invalidar_cache_datos()
             if resultado is None:
                 st.warning("No se encontraron los dos usuarios seleccionados.")
             elif resultado["ya_existia"]:
@@ -189,6 +216,60 @@ def renderizar_vinculaciones():
         if _ejecutar(consulta, usuario=usuario, proyecto=proyecto, rol=rol.strip()):
             st.success("Participación en el proyecto guardada.")
 
+    elif tipo == "Publicar oferta desde empresa":
+        if not empresa or not oferta:
+            st.warning("Selecciona la empresa y la oferta que va a publicar.")
+            return
+        conn = _conexion()
+        if conn is None:
+            return
+        try:
+            with conn.driver.session() as session:
+                def publicar(tx):
+                    registro = tx.run(
+                        """
+                        MATCH (e:Empresa {id: $empresa}), (o:Oferta {id: $oferta})
+                        OPTIONAL MATCH (publicador:Empresa)-[:PUBLICA]->(o)
+                        RETURN collect(DISTINCT publicador.id) AS publicadores
+                        """,
+                        empresa=empresa,
+                        oferta=oferta,
+                    ).single()
+                    if registro is None:
+                        return "no_encontrado"
+
+                    publicadores = [id_empresa for id_empresa in registro["publicadores"] if id_empresa]
+                    if any(id_empresa != empresa for id_empresa in publicadores):
+                        return "otra_empresa"
+
+                    ya_publicada = empresa in publicadores
+                    tx.run(
+                        """
+                        MATCH (e:Empresa {id: $empresa}), (o:Oferta {id: $oferta})
+                        MERGE (e)-[r:PUBLICA]->(o)
+                        ON CREATE SET r.fecha_publicacion = $fecha
+                        ON MATCH SET r.fecha_publicacion = $fecha
+                        """,
+                        empresa=empresa,
+                        oferta=oferta,
+                        fecha=fecha_publicacion.isoformat(),
+                    ).consume()
+                    return "actualizada" if ya_publicada else "creada"
+
+                resultado = session.execute_write(publicar)
+
+            if resultado == "creada":
+                invalidar_cache_datos()
+                st.success("Oferta publicada por la empresa.")
+            elif resultado == "actualizada":
+                invalidar_cache_datos()
+                st.info("La oferta ya estaba publicada por esta empresa; se actualizó la fecha.")
+            elif resultado == "otra_empresa":
+                st.error("Esta oferta ya está publicada por otra empresa.")
+            else:
+                st.warning("No se encontró la empresa o la oferta seleccionadas.")
+        except Exception as error:
+            st.error(f"No se pudo publicar la oferta: {error}")
     else:
         consulta = """
         MATCH (o:Oferta {id: $oferta}), (h:Habilidad {id: $habilidad})
@@ -206,7 +287,9 @@ def renderizar_portal():
     st.subheader("Postularse a una oferta")
     with st.form("form_postulacion"):
         usuario = _selector("Usuario", "Usuario", "postulacion_usuario")
-        oferta = _selector("Oferta", "Oferta", "postulacion_oferta")
+        oferta = _selector(
+            "Oferta", "Oferta", "postulacion_oferta", solo_publicadas=True
+        )
         enviar = st.form_submit_button("Enviar postulación")
 
     if not enviar:
@@ -219,6 +302,7 @@ def renderizar_portal():
     MATCH (u:Usuario {id: $usuario}), (o:Oferta {id: $oferta})
     RETURN
         toLower(trim(coalesce(o.estado, ''))) AS estado,
+        EXISTS { MATCH (:Empresa)-[:PUBLICA]->(o) } AS publicada,
         EXISTS { MATCH (u)-[:POSTULA_A]->(o) } AS ya_postulado
     """
     conn = _conexion()
@@ -235,6 +319,8 @@ def renderizar_portal():
                     return "no_encontrado"
                 if actual["estado"] != "abierta":
                     return "cerrada"
+                if not actual["publicada"]:
+                    return "no_publicada"
                 if actual["ya_postulado"]:
                     return "duplicada"
 
@@ -255,11 +341,14 @@ def renderizar_portal():
             estado = session.execute_write(registrar)
 
         if estado == "creada":
+            invalidar_cache_datos()
             st.success("Postulación registrada.")
         elif estado == "duplicada":
             st.info("Este usuario ya se había postulado a esa oferta.")
         elif estado == "cerrada":
             st.warning("La oferta está cerrada y no acepta postulaciones.")
+        elif estado == "no_publicada":
+            st.warning("La oferta todavía no ha sido publicada por una empresa.")
         else:
             st.warning("No se encontró el usuario o la oferta seleccionados.")
     except Exception as error:
@@ -277,7 +366,7 @@ def renderizar_buscador():
 
     consulta = """
     MATCH (u:Usuario {id: $usuario}), (e:Empresa {id: $empresa})
-    MATCH ruta = shortestPath((u)-[*..10]-(e))
+    MATCH ruta = shortestPath((u)-[*..6]-(e))
     RETURN
         [n IN nodes(ruta) | coalesce(n.nombre, n.titulo, n.id)] AS nombres,
         [r IN relationships(ruta) | type(r)] AS relaciones,
@@ -291,7 +380,7 @@ def renderizar_buscador():
         with conn.driver.session() as session:
             resultado = session.run(consulta, usuario=usuario, empresa=empresa).single()
         if resultado is None:
-            st.info("No se encontró una ruta de hasta 10 relaciones entre esos registros.")
+            st.info("No se encontró una ruta de hasta 6 relaciones entre esos registros.")
             return
         st.success(f"Ruta encontrada en {resultado['pasos']} pasos.")
         st.write(" → ".join(resultado["nombres"]))

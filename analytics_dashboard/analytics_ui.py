@@ -8,21 +8,18 @@ from backend_core.connection import get_db_connection
 CONSULTAS = Path(__file__).resolve().parent / "consultas_cypher"
 
 
-def _driver():
+@st.cache_data(ttl=15, show_spinner=False)
+def _consultar_cacheada(consulta, parametros):
     conn = get_db_connection()
     if conn is None or conn.driver is None:
-        st.error("No se pudo conectar con Neo4j. Revisa la conexión y el archivo .env.")
-        return None
-    return conn.driver
+        raise ConnectionError("No se pudo conectar con Neo4j. Revisa la conexión y el archivo .env.")
+    with conn.driver.session() as session:
+        return session.run(consulta, **parametros).data()
 
 
 def _consultar(consulta, **parametros):
-    driver = _driver()
-    if driver is None:
-        return None
     try:
-        with driver.session() as session:
-            return session.run(consulta, **parametros).data()
+        return _consultar_cacheada(consulta, parametros)
     except Exception as error:
         st.error(f"No se pudo ejecutar la consulta: {error}")
         return None
@@ -73,7 +70,7 @@ def _mostrar(filas, mensaje_vacio="No se encontraron resultados."):
     if filas is None:
         return
     if filas:
-        st.dataframe(filas, use_container_width=True, hide_index=True)
+        st.dataframe(filas, width="stretch", hide_index=True)
     else:
         st.info(mensaje_vacio)
 
@@ -133,6 +130,7 @@ def renderizar_recomendaciones():
         [
             "Contactos",
             "Colaboradores",
+            "Ofertas de empleo para un usuario",
             "Candidatos para una oferta",
             "Contactos en común",
             "Usuarios con habilidades similares",
@@ -159,6 +157,22 @@ def renderizar_recomendaciones():
                     "candidatos_recomendados_para_oferta.cypher", oferta_id=oferta_id
                 ),
                 "No se encontraron candidatos con habilidades requeridas.",
+            )
+        return
+
+    if tipo == "Ofertas de empleo para un usuario":
+        opciones = _opciones("Usuario")
+        with st.form("form_recomendar_empleos"):
+            usuario_id = _selector(
+                opciones, "Usuario", "recomendar_empleos_usuario_id"
+            )
+            consultar = st.form_submit_button("Buscar ofertas recomendadas")
+        if consultar and usuario_id:
+            _mostrar(
+                _consultar_archivo(
+                    "recomendaciones_empleos.cypher", usuario_id=usuario_id
+                ),
+                "No se encontraron ofertas abiertas que coincidan con sus habilidades.",
             )
         return
 
@@ -202,14 +216,20 @@ def renderizar_metricas():
     for columna, entidad in zip(columnas, etiquetas_metricas):
         columna.metric(etiquetas_metricas[entidad], totales.get(entidad, 0))
 
-    pestañas = st.tabs(["Usuarios influyentes", "Habilidades demandadas", "Comunidades"])
-    with pestañas[0]:
+    indicador = st.radio(
+        "Indicador",
+        ["Usuarios influyentes", "Habilidades demandadas", "Comunidades"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="indicador_mercado",
+    )
+    if indicador == "Usuarios influyentes":
         filas = _consultar_archivo("usuarios_mas_influyentes.cypher")
         _mostrar(filas)
-    with pestañas[1]:
+    elif indicador == "Habilidades demandadas":
         filas = _consultar_archivo("habilidades_mas_demandadas.cypher")
         _mostrar(filas)
-    with pestañas[2]:
+    else:
         st.caption("Comunidades calculadas con Label Propagation sobre CONECTA_CON; no requiere GDS.")
         filas = _consultar_archivo("comunidades_detectadas.cypher")
         if filas is not None:
@@ -218,9 +238,15 @@ def renderizar_metricas():
 
 def renderizar_grafo():
     st.subheader("Análisis de rutas y proyectos")
-    pestañas = st.tabs(["Ruta usuario–empresa", "Proyectos relacionados"])
+    analisis = st.radio(
+        "Tipo de análisis",
+        ["Ruta usuario–empresa", "Proyectos con miembros", "Proyectos con tecnologías"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="tipo_analisis_red",
+    )
 
-    with pestañas[0]:
+    if analisis == "Ruta usuario–empresa":
         usuarios = _opciones("Usuario")
         empresas = _opciones("Empresa")
         with st.form("form_ruta_analitica"):
@@ -237,8 +263,7 @@ def renderizar_grafo():
                 "No se encontró una ruta entre ese usuario y esa empresa.",
             )
 
-    with pestañas[1]:
-        st.markdown("**Proyectos con miembros compartidos**")
+    elif analisis == "Proyectos con miembros":
         _mostrar(_consultar_archivo("proyectos_miembros_compartidos.cypher"))
-        st.markdown("**Proyectos que comparten tecnologías**")
+    else:
         _mostrar(_consultar_archivo("proyectos_tecnologias_compartidas.cypher"))

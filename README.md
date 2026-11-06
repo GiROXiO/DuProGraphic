@@ -44,7 +44,7 @@ DuProGraphic/
 
 ## Requisitos
 
-- Python 3.8 o superior.
+- Python 3.11 o superior.
 - Acceso a una instancia de Neo4j Aura.
 
 ## Instalación en Windows CMD
@@ -88,7 +88,7 @@ Streamlit abrirá la aplicación en `http://localhost:8501`.
 ## Funciones de la aplicación
 
 - **Gestión de entidades:** crear, consultar, actualizar y eliminar usuarios, empresas y ofertas.
-- **Lógica de negocio:** crear conexiones profesionales, asignar habilidades, vincular usuarios con empresas y proyectos, asociar habilidades requeridas a ofertas, registrar postulaciones y buscar rutas entre usuarios y empresas.
-- **Analítica:** recomendaciones de contactos, colaboradores y candidatos; contactos en común; habilidades similares; usuarios con más conexiones; habilidades más demandadas; conexiones entre proyectos y rutas en el grafo.
+- **Lógica de negocio:** crear conexiones profesionales, asignar habilidades, vincular usuarios con empresas y proyectos, publicar ofertas desde empresas, asociar habilidades requeridas, registrar postulaciones a ofertas abiertas y publicadas, y buscar rutas entre usuarios y empresas.
+- **Analítica:** recomendaciones de contactos, empleos, colaboradores y candidatos; contactos en común; habilidades similares; usuarios con más conexiones; habilidades más demandadas; conexiones entre proyectos y rutas en el grafo.
 
 La vista de comunidades aplica Label Propagation sobre `CONECTA_CON`; no requiere Graph Data Science (GDS).

@@ -1,9 +1,10 @@
 import os
+from pathlib import Path
 import streamlit as st
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 class Neo4jConnection:
     def __init__(self):
@@ -29,3 +30,8 @@ def get_db_connection():
     conn = Neo4jConnection()
     conn.connect()
     return conn
+
+
+def invalidar_cache_datos():
+    """Invalida resultados de lectura después de una escritura confirmada."""
+    st.cache_data.clear()

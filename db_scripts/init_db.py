@@ -1,8 +1,9 @@
 from neo4j import GraphDatabase
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 URI = os.getenv("NEO4J_URI")
 AUTH = (os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASSWORD"))
@@ -132,7 +133,7 @@ def poblar_datos(tx):
     tx.run("UNWIND $post AS p MATCH (u:Usuario {id: p[0]}), (o:Oferta {id: p[1]}) MERGE (u)-[r:POSTULA_A]->(o) ON CREATE SET r.estado_proceso = p[2], r.fecha_postulacion = p[3]", post=posts)
 
     # Conexiones Analíticas
-    usa_tech = [("P1","H1"), ("P1","H2"), ("P2","H4"), ("P2","H3"), ("P3","H5"), ("P4","H6")]
+    usa_tech = [("P1","H1"), ("P1","H2"), ("P2","H1"), ("P2","H4"), ("P2","H3"), ("P3","H5"), ("P4","H6")]
     tx.run("UNWIND $ut AS u MATCH (p:Proyecto {id: u[0]}), (h:Habilidad {id: u[1]}) MERGE (p)-[:USA_TECNOLOGIA]->(h)", ut=usa_tech)
 
     sigue = [("U1","E1"), ("U1","E2"), ("U2","E1"), ("U4","E3"), ("U9","E4")]

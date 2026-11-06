@@ -1,4 +1,4 @@
-// Lista los usuarios y sus conexiones directas para calcular componentes localmente.
+// Lista usuarios y conexiones para detectar comunidades mediante Label Propagation en Python.
 // Es de solo lectura y evita búsquedas de rutas entre todos los pares.
 MATCH (usuario:Usuario)
 OPTIONAL MATCH (usuario)-[:CONECTA_CON]-(contacto:Usuario)
