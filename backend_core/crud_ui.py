@@ -63,13 +63,30 @@ def renderizar_creacion():
 
     try:
         with conn.driver.session() as session:
-            resultado = session.run(f"""CREATE (n:{etiqueta} {{id: $id}}) SET n += $propiedades RETURN n.id AS id""", id=entidad_id.strip(), propiedades=valores_limpios,).single()
+            existente = session.run(
+                f"MATCH (n:{etiqueta} {{id: $id}}) RETURN n.id AS id LIMIT 1",
+                id=entidad_id.strip(),
+            ).single()
+            if existente:
+                st.warning(f"Ya existe un registro {etiqueta} con ID {entidad_id.strip()}.")
+                return
 
-        st.success(f"{etiqueta} registrado con ID {resultado['id']}.")
+            resultado = session.run(
+                f"""
+                CREATE (n:{etiqueta} {{id: $id}})
+                SET n += $propiedades
+                RETURN n.id AS id
+                """,
+                id=entidad_id.strip(),
+                propiedades=valores_limpios,
+            ).single()
 
-    except Exception:
-        st.error("No se pudo registrar. Revisa que el ID no exista y que Neo4j esté disponible.")
-
+        if resultado:
+            st.success(f"{etiqueta} registrado con ID {resultado['id']}.")
+        else:
+            st.error("Neo4j no confirmó la creación del registro.")
+    except Exception as error:
+        st.error(f"No se pudo registrar. Verifica el ID y la conexión con Neo4j. Detalle: {error}")
 
 def renderizar_lectura():
     st.subheader("Consultar registros")
@@ -197,6 +214,15 @@ def renderizar_actualizacion():
 
     try:
         with conn.driver.session() as session:
+            if id_nuevo.strip() != id_actual:
+                existente = session.run(
+                    f"MATCH (n:{etiqueta} {{id: $id}}) RETURN n.id AS id LIMIT 1",
+                    id=id_nuevo.strip(),
+                ).single()
+                if existente:
+                    st.warning(f"El ID {id_nuevo.strip()} ya está asignado a otro registro.")
+                    return
+
             resultado = session.run(consulta, parametros).single()
 
         if resultado:
@@ -204,10 +230,8 @@ def renderizar_actualizacion():
         else:
             st.warning("No se encontró el registro que querías actualizar.")
 
-    except Exception:
-        st.error("No se pudo actualizar. Revisa que el ID nuevo no esté ocupado.")
-
-
+    except Exception as error:
+        st.error(f"No se pudo actualizar. Revisa el ID y la conexión con Neo4j. Detalle: {error}")
 
 def renderizar_eliminacion():
     st.subheader("Eliminar registros")

@@ -1,107 +1,94 @@
-# Duprographic - Plataforma de Red Profesional Basada en Grafos
+# DuProGraphic
 
-## Descripción del Proyecto
+Aplicación web de gestión y análisis de una red profesional. Usa Streamlit y Neo4j Aura para registrar usuarios, empresas, habilidades, proyectos y ofertas, además de explorar las relaciones entre esas entidades.
 
-Duprographic es una plataforma analítica y transaccional desarrollada para gestionar y analizar una red profesional interconectada. A diferencia de los sistemas relacionales tradicionales, este proyecto utiliza **Neo4j** (Base de Datos Orientada a Grafos) para modelar relaciones complejas entre Usuarios, Empresas, Proyectos, Ofertas y Habilidades, permitiendo consultas profundas como detección de comunidades, rutas más cortas y motores de recomendación.
+## Modelo de datos
 
-## Equipo de Desarrollo
+### Nodos
 
-- **Jerónimo Castro**: Arquitecto de Base de Datos e Integrador (Líder del repositorio).
-- **Juan Cáceres**: Desarrollador Backend Core (Modelos ORM y operaciones CRUD).
-- **Juan Arrieta**: Especialista en Lógica de Negocio (Flujos de validación, préstamos y multas).
-- **Miguel Carrizosa**: Analista de Datos (Consultas SQL, métricas y reportes).
+- `Usuario`: nombre, perfil profesional y universidad.
+- `Empresa`: nombre y sector.
+- `Habilidad`: nombre y categoría.
+- `Proyecto`: nombre y descripción.
+- `Oferta`: título, estado, modalidad y nivel de experiencia.
 
-## Estructura del Repositorio
+### Relaciones
 
-El proyecto está modularizado para evitar conflictos de integración y separar las responsabilidades del equipo:
+- `CONECTA_CON`: conexiones profesionales entre usuarios.
+- `TRABAJA_EN`: vincula usuarios con empresas.
+- `TIENE_HABILIDAD`: relaciona usuarios con habilidades.
+- `PARTICIPA_EN`: vincula usuarios con proyectos.
+- `PUBLICA`: relaciona empresas con ofertas.
+- `REQUIERE`: conecta ofertas con habilidades requeridas.
+- `POSTULA_A`: registra postulaciones de usuarios a ofertas.
+- `SIGUE_A`: usuarios que siguen empresas.
+- `USA_TECNOLOGIA`: tecnologías asociadas a proyectos.
+
+## Estructura
 
 ```text
 DuProGraphic/
-├── .env                        # Credenciales de conexión a Neo4j Aura (No versionado)
-├── .gitignore                  # Archivos ignorados por Git
-├── app.py                      # Enrutador principal de la interfaz (Streamlit)
-├── requirements.txt            # Dependencias del proyecto
-│
-├── db_scripts/
-│   └── init_db.py              # Script de inicialización y carga masiva de datos
-│
-├── backend_core/               # Módulo asignado a Juan Cáceres
-│   ├── __init__.py
-│   ├── connection.py           # Gestor centralizado de la conexión a Neo4j (Singleton)
-│   └── crud_ui.py              # Interfaz y controladores para operaciones transaccionales
-│
-├── business_logic/             # Módulo asignado a Juan Arrieta
-│   ├── __init__.py
-│   └── logic_ui.py             # Interfaz y controladores para flujos de red y rutas
-│
-└── analytics_dashboard/        # Módulo asignado a Miguel Carrizosa
-    ├── __init__.py
-    └── analytics_ui.py         # Interfaz y visualizadores para métricas avanzadas
+├── app.py
+├── requirements.txt
+├── backend_core/
+│   ├── connection.py
+│   └── crud_ui.py
+├── business_logic/
+│   └── logic_ui.py
+├── analytics_dashboard/
+│   ├── analytics_ui.py
+│   └── consultas_cypher/
+└── db_scripts/
+    └── init_db.py
 ```
 
-## Requisitos Previos
+## Requisitos
 
 - Python 3.8 o superior.
-- Cuenta activa en [Neo4j AuraDB](https://neo4j.com/cloud/platform/aura-graph-database/).
-- Git instalado en el sistema local.
+- Acceso a una instancia de Neo4j Aura.
 
-## Instalación y Configuración
+## Instalación en Windows CMD
 
-**1. Clonar el repositorio:**
+Desde la carpeta del proyecto:
 
-```bash
-git clone <URL_DEL_REPOSITORIO>
-cd DuProGraphic
+```cmd
+python -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install -r requirements.txt
 ```
 
-**2. Crear y activar el entorno virtual:**
-
-- En Windows:
-  ```bash
-  python -m venv venv
-  venv\Scripts\activate
-  ```
-- En macOS/Linux:
-  ```bash
-  python3 -m venv venv
-  source venv/bin/activate
-  ```
-
-**3. Instalar las dependencias:**
-
-```bash
-pip install streamlit neo4j python-dotenv
-```
-
-_(Nota: Si se agregan librerías posteriores, actualizar con `pip freeze > requirements.txt`)_
-
-**4. Configurar las variables de entorno:**
-Crear un archivo `.env` en la raíz del proyecto con las credenciales entregadas por Neo4j Aura. El protocolo debe ser `neo4j+ssc://` para evitar conflictos de certificados SSL en entornos de desarrollo local:
+Crea un archivo `.env` en la raíz del proyecto con las credenciales de tu instancia Aura:
 
 ```env
-NEO4J_URI=neo4j+ssc://<TU_INSTANCE_ID>.databases.neo4j.io
-NEO4J_USER=<TU_USUARIO>
-NEO4J_PASSWORD=<TU_CONTRASEÑA>
+NEO4J_URI=neo4j+ssc://<INSTANCE_ID>.databases.neo4j.io
+NEO4J_USER=<USUARIO>
+NEO4J_PASSWORD=<CONTRASEÑA>
 ```
 
-## Inicialización de la Base de Datos
+El archivo `.env` está excluido de Git. No subas credenciales al repositorio.
 
-Antes de ejecutar la aplicación por primera vez, es necesario estructurar la base de datos y cargar el volumen de datos masivos.
+## Inicialización de la base
 
-Ejecutar en la terminal (asegurando que el entorno virtual esté activo):
+Con el entorno virtual activo y el `.env` configurado, ejecuta:
 
-```bash
-python db_scripts/init_db.py
+```cmd
+python db_scripts\init_db.py
 ```
 
-Este script creará las restricciones de unicidad e inyectará la red inicial.
+El script crea las restricciones de unicidad que falten y carga el conjunto de datos de ejemplo. Usa `MERGE` y `ON CREATE SET`: al volver a ejecutarlo no borra nodos ni reemplaza propiedades de nodos o relaciones que ya existan. En una base que ya tenga datos, solo completa los registros o vínculos faltantes del conjunto de ejemplo.
 
-## Ejecución de la Aplicación
+## Ejecutar la aplicación
 
-Para levantar el servidor local de desarrollo y visualizar la interfaz gráfica:
-
-```bash
+```cmd
 streamlit run app.py
 ```
 
-La aplicación estará disponible en el navegador web en `http://localhost:8501`.
+Streamlit abrirá la aplicación en `http://localhost:8501`.
+
+## Funciones de la aplicación
+
+- **Gestión de entidades:** crear, consultar, actualizar y eliminar usuarios, empresas y ofertas.
+- **Lógica de negocio:** crear conexiones profesionales, asignar habilidades, vincular usuarios con empresas y proyectos, asociar habilidades requeridas a ofertas, registrar postulaciones y buscar rutas entre usuarios y empresas.
+- **Analítica:** recomendaciones de contactos, colaboradores y candidatos; contactos en común; habilidades similares; usuarios con más conexiones; habilidades más demandadas; conexiones entre proyectos y rutas en el grafo.
+
+La vista de comunidades aplica Label Propagation sobre `CONECTA_CON`; no requiere Graph Data Science (GDS).
