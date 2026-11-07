@@ -366,7 +366,7 @@ def renderizar_buscador():
 
     consulta = """
     MATCH (u:Usuario {id: $usuario}), (e:Empresa {id: $empresa})
-    MATCH ruta = shortestPath((u)-[*..6]-(e))
+    MATCH ruta = shortestPath((u)-[:CONECTA_CON|TRABAJA_EN|TIENE_HABILIDAD|PARTICIPA_EN|PUBLICA|REQUIERE|POSTULA_A|SIGUE_A|USA_TECNOLOGIA*..6]-(e))
     RETURN
         [n IN nodes(ruta) | coalesce(n.nombre, n.titulo, n.id)] AS nombres,
         [r IN relationships(ruta) | type(r)] AS relaciones,

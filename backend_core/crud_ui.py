@@ -1,5 +1,6 @@
 import streamlit as st
 from backend_core.connection import get_db_connection, invalidar_cache_datos
+from backend_core.auth import ROL_EMPRESA, ROL_USUARIO, crear_perfil_con_acceso_admin
 
 
 OPCIONES_OFERTA = {
@@ -46,6 +47,7 @@ def _cargar_registros(etiqueta):
         st.error(f"No se pudieron cargar los registros: {error}")
         return None
 
+
 def renderizar_creacion():
     st.subheader("Registrar entidad")
 
@@ -60,10 +62,7 @@ def renderizar_creacion():
         },
         "Empresas": {
             "label": "Empresa",
-            "campos": {
-                "nombre": "Nombre",
-                "sector": "Sector",
-            },
+            "campos": {"nombre": "Nombre", "sector": "Sector"},
         },
         "Ofertas": {
             "label": "Oferta",
@@ -76,73 +75,120 @@ def renderizar_creacion():
         },
     }
 
-    seleccion = st.selectbox("¿Qué quieres registrar?", list(entidades.keys()), key="entidad_crear",)
+    seleccion = st.selectbox(
+        "¿Qué quieres registrar?", list(entidades.keys()), key="entidad_crear"
+    )
     config = entidades[seleccion]
     etiqueta = config["label"]
 
     with st.form(f"form_registrar_{etiqueta}", clear_on_submit=True):
         entidad_id = st.text_input("ID", key=f"crear_{etiqueta}_id")
-        valores = {}
-
-        for propiedad, etiqueta_campo in config["campos"].items():
-            valores[propiedad] = _campo_entidad(
+        valores = {
+            propiedad: _campo_entidad(
                 etiqueta,
                 propiedad,
                 etiqueta_campo,
                 key=f"crear_{etiqueta}_{propiedad}",
             )
-
+            for propiedad, etiqueta_campo in config["campos"].items()
+        }
+        correo = ""
+        password = ""
+        if etiqueta in {"Usuario", "Empresa"}:
+            st.markdown("#### Acceso inicial")
+            correo = st.text_input("Correo / usuario", key=f"crear_{etiqueta}_correo")
+            password = st.text_input(
+                "Contraseña inicial (mínimo 10 caracteres)",
+                type="password",
+                key=f"crear_{etiqueta}_password",
+            )
         guardar = st.form_submit_button("Guardar")
 
     if not guardar:
         return
 
     valores_limpios = {
-        propiedad: valor.strip()
+        propiedad: (valor or "").strip()
         for propiedad, valor in valores.items()
     }
+    if not entidad_id.strip() or any(not valor for valor in valores_limpios.values()):
+        st.warning("Completa el ID y todos los campos.")
+        return
 
     if etiqueta == "Oferta":
         for propiedad, opciones in OPCIONES_OFERTA.items():
             if valores_limpios[propiedad] not in opciones:
-                st.warning(f"Selecciona un valor válido para {propiedad.replace('_', ' ')}.")
+                st.warning(
+                    f"Selecciona un valor válido para {propiedad.replace('_', ' ')}."
+                )
                 return
-    if not entidad_id.strip() or any(not valor for valor in valores_limpios.values()):
-        st.warning("Completa todos los campos.")
-        return
+        conn = get_db_connection()
+        if conn is None or conn.driver is None:
+            st.error("No se pudo conectar con Neo4j.")
+            return
 
-    conn = get_db_connection()
-    if conn is None or conn.driver is None:
-        st.error("No se pudo conectar con Neo4j.")
-        return
-
-    try:
-        with conn.driver.session() as session:
-            existente = session.run(
-                f"MATCH (n:{etiqueta} {{id: $id}}) RETURN n.id AS id LIMIT 1",
+        def crear_oferta(tx):
+            existente = tx.run(
+                "MATCH (o:Oferta {id: $id}) RETURN o.id AS id",
                 id=entidad_id.strip(),
             ).single()
             if existente:
-                st.warning(f"Ya existe un registro {etiqueta} con ID {entidad_id.strip()}.")
-                return
-
-            resultado = session.run(
-                f"""
-                CREATE (n:{etiqueta} {{id: $id}})
-                SET n += $propiedades
-                RETURN n.id AS id
+                return "id_existente", None
+            resultado = tx.run(
+                """
+                CREATE (o:Oferta {id: $id})
+                SET o += $propiedades
+                RETURN o.id AS id
                 """,
                 id=entidad_id.strip(),
                 propiedades=valores_limpios,
             ).single()
+            return ("creada", resultado["id"]) if resultado else ("error", None)
 
-        if resultado:
-            invalidar_cache_datos()
-            st.success(f"{etiqueta} registrado con ID {resultado['id']}.")
-        else:
-            st.error("Neo4j no confirmó la creación del registro.")
-    except Exception as error:
-        st.error(f"No se pudo registrar. Verifica el ID y la conexión con Neo4j. Detalle: {error}")
+        try:
+            with conn.driver.session() as session:
+                estado, nuevo_id = session.execute_write(crear_oferta)
+            if estado == "creada":
+                invalidar_cache_datos()
+                st.success(f"Oferta registrada con ID {nuevo_id}.")
+            elif estado == "id_existente":
+                st.warning(f"Ya existe una oferta con ID {entidad_id.strip()}.")
+            else:
+                st.error("Neo4j no confirmó la creación de la oferta.")
+        except Exception as error:
+            st.error(f"No se pudo registrar la oferta. Detalle: {error}")
+        return
+
+    rol = ROL_USUARIO if etiqueta == "Usuario" else ROL_EMPRESA
+    estado, _ = crear_perfil_con_acceso_admin(
+        rol,
+        correo,
+        password,
+        entidad_id,
+        valores_limpios,
+    )
+    if estado == "creada":
+        invalidar_cache_datos()
+        st.success(
+            f"{etiqueta} y cuenta creadas. El correo ingresado será su usuario de acceso."
+        )
+    elif estado == "correo_existente":
+        st.warning("Ya existe una cuenta con ese correo.")
+    elif estado == "correo_perfil_existente":
+        st.warning("Ese correo ya está asociado a otro perfil.")
+    elif estado == "id_existente":
+        st.warning(f"Ya existe un perfil con ID {entidad_id.strip()}.")
+    elif estado == "id_invalido":
+        st.warning("El ID debe empezar con U para usuarios o E para empresas.")
+    elif estado == "correo_invalido":
+        st.warning("Escribe un correo válido.")
+    elif estado == "password_corto":
+        st.warning("La contraseña debe tener al menos 10 caracteres.")
+    elif estado == "datos_incompletos":
+        st.warning("Completa el ID y el nombre del perfil.")
+    else:
+        st.error("No se pudo crear el perfil y su cuenta.")
+
 
 def renderizar_lectura():
     st.subheader("Consultar registros")
@@ -291,46 +337,35 @@ def renderizar_eliminacion():
         "Empresas": "Empresa",
         "Ofertas": "Oferta",
     }
-
     seleccion = st.selectbox(
         "Entidad que quieres eliminar",
         list(entidades.keys()),
         key="entidad_eliminar",
     )
     etiqueta = entidades[seleccion]
-
     filas = _cargar_registros(etiqueta)
     if filas is None:
         return
 
-    nombres_por_id = {
-        str(fila["id"]): fila["nombre"]
-        for fila in filas
-    }
-
+    nombres_por_id = {str(fila["id"]): fila["nombre"] for fila in filas}
     if not nombres_por_id:
         st.info(f"No hay registros de {seleccion.lower()} para eliminar.")
         return
 
     id_eliminar = st.selectbox(
         "Registro que quieres eliminar",
-        list(nombres_por_id.keys()),
-        format_func=lambda id_registro: (
-            f"{nombres_por_id[id_registro]} (ID: {id_registro})"
-        ),
+        list(nombres_por_id),
+        format_func=lambda item: f"{nombres_por_id[item]} (ID: {item})",
         key=f"registro_eliminar_{etiqueta}",
     )
-
     st.warning(
-        "Esta acción modifica la base compartida de Aura y elimina "
-        "también las relaciones directas de ese registro."
+        "El perfil y sus relaciones se eliminarán. Su cuenta quedará desactivada "
+        "y los mensajes existentes se conservarán."
     )
-
     confirmar = st.checkbox(
         f"Confirmo eliminar {nombres_por_id[id_eliminar]} (ID: {id_eliminar})",
         key=f"confirmar_eliminar_{etiqueta}_{id_eliminar}",
     )
-
     if not st.button(
         "Eliminar registro",
         type="primary",
@@ -343,33 +378,61 @@ def renderizar_eliminacion():
     if conn is None or conn.driver is None:
         st.error("No se pudo conectar con Neo4j.")
         return
-    try:
-        with conn.driver.session() as session:
-            if etiqueta == "Empresa":
-                tiene_ofertas = session.run(
-                    """
-                    MATCH (e:Empresa {id: $id})-[:PUBLICA]->(:Oferta)
-                    RETURN count(*) > 0 AS tiene_ofertas
-                    """,
-                    id=id_eliminar,
-                ).single()["tiene_ofertas"]
 
-                if tiene_ofertas:
-                    st.error(
-                        "Primero elimina las ofertas publicadas por esta empresa."
-                    )
-                    return
+    def eliminar(tx):
+        existe = tx.run(
+            f"MATCH (n:{etiqueta} {{id: $id}}) RETURN n.id AS id",
+            id=id_eliminar,
+        ).single()
+        if not existe:
+            return "no_encontrado"
 
-            session.run(
-                f"""
-                MATCH (n:{etiqueta} {{id: $id}})
-                DETACH DELETE n
+        if etiqueta == "Empresa":
+            ofertas = tx.run(
+                """
+                MATCH (e:Empresa {id: $id})-[:PUBLICA]->(:Oferta)
+                RETURN count(*) AS total
                 """,
                 id=id_eliminar,
-            ).consume()
+            ).single()["total"]
+            if ofertas:
+                return "tiene_ofertas"
 
-        invalidar_cache_datos()
-        st.success(f"Registro {id_eliminar} eliminado.")
+        if etiqueta in {"Usuario", "Empresa"}:
+            account_ids = tx.run(
+                f"""
+                MATCH (c:Cuenta)-[:REPRESENTA_A]->(p:{etiqueta} {{id: $id}})
+                RETURN collect(c.id) AS ids
+                """,
+                id=id_eliminar,
+            ).single()["ids"]
+            for account_id in account_ids:
+                tx.run(
+                    """
+                    MATCH (c:Cuenta {id: $id})
+                    SET c.activa = false,
+                        c.inactivada = datetime().toString(),
+                        c.auth_version = coalesce(c.auth_version, 0) + 1
+                    """,
+                    id=account_id,
+                ).consume()
 
+        eliminada = tx.run(
+            f"MATCH (n:{etiqueta} {{id: $id}}) DETACH DELETE n RETURN count(n) AS total",
+            id=id_eliminar,
+        ).single()
+        return "eliminado" if eliminada and eliminada["total"] else "no_encontrado"
+
+    try:
+        with conn.driver.session() as session:
+            estado = session.execute_write(eliminar)
+        if estado == "eliminado":
+            invalidar_cache_datos()
+            st.success(f"Registro {id_eliminar} eliminado y el acceso asociado desactivado.")
+        elif estado == "tiene_ofertas":
+            st.error("Primero elimina las ofertas publicadas por esta empresa.")
+        else:
+            st.warning("El registro ya no existe; la lista estaba desactualizada.")
     except Exception:
         st.error("No se pudo eliminar el registro.")
+

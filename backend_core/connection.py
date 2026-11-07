@@ -1,10 +1,14 @@
 import os
 from pathlib import Path
+from threading import RLock
+
 import streamlit as st
-from neo4j import GraphDatabase
 from dotenv import load_dotenv
+from neo4j import GraphDatabase
+
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
 
 class Neo4jConnection:
     def __init__(self):
@@ -12,24 +16,46 @@ class Neo4jConnection:
         self.user = os.getenv("NEO4J_USER")
         self.password = os.getenv("NEO4J_PASSWORD")
         self.driver = None
+        self._lock = RLock()
 
     def connect(self):
-        if not self.driver:
+        """Crea y valida el driver; permite reintentar si Aura estuvo temporalmente caído."""
+        with self._lock:
+            if self.driver is not None:
+                return self.driver
+
+            if not self.uri or not self.user or not self.password:
+                st.error("Configura NEO4J_URI, NEO4J_USER y NEO4J_PASSWORD en el archivo .env.")
+                return None
+
+            driver = None
             try:
-                self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
-            except Exception as e:
-                st.error(f"Error al conectar con Neo4j: {e}")
-        return self.driver
+                driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+                driver.verify_connectivity()
+                self.driver = driver
+            except Exception:
+                if driver is not None:
+                    driver.close()
+                st.error("No se pudo conectar con Neo4j Aura. Revisa la red y las credenciales del archivo .env.")
+            return self.driver
 
     def close(self):
-        if self.driver:
-            self.driver.close()
+        with self._lock:
+            if self.driver is not None:
+                self.driver.close()
+                self.driver = None
+
 
 @st.cache_resource
+def _connection_resource():
+    return Neo4jConnection()
+
+
 def get_db_connection():
-    conn = Neo4jConnection()
-    conn.connect()
-    return conn
+    # Se intenta conectar en cada acceso si la creación anterior falló.
+    conexion = _connection_resource()
+    conexion.connect()
+    return conexion
 
 
 def invalidar_cache_datos():

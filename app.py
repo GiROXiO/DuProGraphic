@@ -1,7 +1,9 @@
 import streamlit as st
 
 from analytics_dashboard import analytics_ui
-from backend_core import crud_ui
+from backend_core import accounts_ui, crud_ui
+from backend_core import auth_ui, role_ui
+from backend_core.auth import validar_sesion
 from business_logic import logic_ui
 
 
@@ -201,6 +203,7 @@ PAGINAS = {
     "Gestión de datos": ("Gestión de datos", "Registra, consulta y actualiza usuarios, empresas y ofertas."),
     "Relaciones": ("Relaciones", "Conecta usuarios, habilidades, proyectos, empresas y ofertas."),
     "Analítica": ("Consultas y análisis", "Revisa rutas, recomendaciones y resultados de la red."),
+    "Cuentas y accesos": ("Cuentas y accesos", "Consulta correos, perfiles y roles; restablece accesos."),
 }
 
 
@@ -261,6 +264,34 @@ def main():
     if _tema_oscuro_activo():
         st.markdown(ESTILOS_OSCUROS, unsafe_allow_html=True)
 
+    cuenta = st.session_state.get("cuenta_autenticada")
+    if cuenta:
+        auth_ui.limpiar_claves_credenciales()
+        estado_sesion = validar_sesion(cuenta)
+        if estado_sesion is None:
+            st.error("No se pudo validar la sesión con Neo4j. Reintenta cuando la conexión vuelva.")
+            return
+        if not estado_sesion:
+            st.session_state.clear()
+            st.warning("Tu acceso cambió o fue revocado. Inicia sesión de nuevo.")
+            auth_ui.renderizar_acceso()
+            return
+    if not cuenta:
+        auth_ui.renderizar_acceso()
+        return
+
+    rol = cuenta.get("rol")
+    if rol == "administrador":
+        paginas = PAGINAS
+    elif rol == "usuario":
+        paginas = role_ui.PAGINAS_USUARIO
+    elif rol == "empresa":
+        paginas = role_ui.PAGINAS_EMPRESA
+    else:
+        st.session_state.pop("cuenta_autenticada", None)
+        st.error("El tipo de cuenta no es valido. Inicia sesion otra vez.")
+        return
+
     with st.sidebar:
         st.markdown(
             '<div class="brand-lockup"><div class="brand-symbol">D</div><div>'
@@ -268,12 +299,17 @@ def main():
             '<div class="brand-subtitle">Proyecto de bases de datos</div></div></div>',
             unsafe_allow_html=True,
         )
-        if st.session_state.get("pagina_activa") not in PAGINAS:
+        st.caption(f"Sesion: {cuenta.get('nombre', cuenta['correo'])}")
+        st.caption(f"Rol: {auth_ui.ROLES[rol][0]}")
+        if st.button("Cerrar sesion", key="cerrar_sesion", width="stretch"):
+            auth_ui.cerrar_sesion()
+
+        if st.session_state.get("pagina_activa") not in paginas:
             st.session_state["pagina_activa"] = "Inicio"
-        for pagina in PAGINAS:
+        for pagina in paginas:
             st.button(
                 pagina,
-                key=f"nav_{pagina.replace(' ', '_')}",
+                key=f"nav_{rol}_{pagina.replace(' ', '_')}",
                 type="primary" if st.session_state["pagina_activa"] == pagina else "secondary",
                 width="stretch",
                 on_click=_seleccionar_pagina,
@@ -285,6 +321,17 @@ def main():
             st.caption("Juan Cáceres · Backend CRUD")
             st.caption("Juan Arrieta · Lógica de negocio")
             st.caption("Miguel Carrizosa · Analítica")
+
+    if rol == "usuario":
+        titulo, descripcion = paginas[st.session_state["pagina_activa"]]
+        _encabezado(titulo, descripcion)
+        role_ui.renderizar_usuario(cuenta, st.session_state["pagina_activa"])
+        return
+    if rol == "empresa":
+        titulo, descripcion = paginas[st.session_state["pagina_activa"]]
+        _encabezado(titulo, descripcion)
+        role_ui.renderizar_empresa(cuenta, st.session_state["pagina_activa"])
+        return
 
     seccion = st.session_state["pagina_activa"]
     titulo, descripcion = PAGINAS[seccion]
@@ -318,7 +365,7 @@ def main():
             "Explorador de rutas": logic_ui.renderizar_buscador,
         }
         vistas[flujo]()
-    else:
+    elif seccion == "Analítica":
         _encabezado(titulo, descripcion)
         reporte = st.selectbox(
             "Vista analítica",
@@ -331,6 +378,9 @@ def main():
             "Rutas y proyectos": analytics_ui.renderizar_grafo,
         }
         vistas[reporte]()
+    else:
+        _encabezado(titulo, descripcion)
+        accounts_ui.renderizar()
 
 
 if __name__ == "__main__":

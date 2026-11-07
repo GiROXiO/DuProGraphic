@@ -14,6 +14,11 @@ def crear_restricciones(tx):
     tx.run("CREATE CONSTRAINT IF NOT EXISTS FOR (h:Habilidad) REQUIRE h.id IS UNIQUE")
     tx.run("CREATE CONSTRAINT IF NOT EXISTS FOR (p:Proyecto) REQUIRE p.id IS UNIQUE")
     tx.run("CREATE CONSTRAINT IF NOT EXISTS FOR (o:Oferta) REQUIRE o.id IS UNIQUE")
+    tx.run("CREATE CONSTRAINT cuenta_email_unico IF NOT EXISTS FOR (c:Cuenta) REQUIRE c.email_normalizado IS UNIQUE")
+    tx.run("CREATE CONSTRAINT usuario_correo_unico IF NOT EXISTS FOR (u:Usuario) REQUIRE u.correo_contacto IS UNIQUE")
+    tx.run("CREATE CONSTRAINT empresa_correo_unico IF NOT EXISTS FOR (e:Empresa) REQUIRE e.correo_contacto IS UNIQUE")
+    tx.run("CREATE CONSTRAINT conversacion_clave_unica IF NOT EXISTS FOR (c:Conversacion) REQUIRE c.clave IS UNIQUE")
+    tx.run("CREATE CONSTRAINT mensaje_id_unico IF NOT EXISTS FOR (m:Mensaje) REQUIRE m.id IS UNIQUE")
 
 def poblar_datos(tx):
     # ON CREATE conserva los nodos y relaciones que ya existen en Aura.
@@ -33,7 +38,9 @@ def poblar_datos(tx):
         {"id": "U12", "nombre": "Ana Rodríguez", "perfil": "QA Tester", "univ": "Universidad de Antioquia"},
         {"id": "U13", "nombre": "Jorge Silva", "perfil": "Database Admin", "univ": "Universidad del Valle"},
         {"id": "U14", "nombre": "Valentina Ríos", "perfil": "UX/UI Designer", "univ": "Universidad de los Andes"},
-        {"id": "U15", "nombre": "Mateo Blanco", "perfil": "Fullstack Developer", "univ": "Sena"}
+        {"id": "U15", "nombre": "Mateo Blanco", "perfil": "Fullstack Developer", "univ": "Sena"},
+        # Perfil de prueba conservado en la instancia original de Aura.
+        {"id": "U322", "nombre": "Juan", "perfil": "Profesor de Parafrasis", "univ": "UniSimon"}
     ]
     tx.run("""
         UNWIND $usuarios AS u
@@ -140,14 +147,16 @@ def poblar_datos(tx):
     tx.run("UNWIND $sig AS s MATCH (u:Usuario {id: s[0]}), (e:Empresa {id: s[1]}) MERGE (u)-[:SIGUE_A]->(e)", sig=sigue)
 
 def inicializar_bd():
+    if not URI or not AUTH[0] or not AUTH[1]:
+        raise SystemExit("Faltan NEO4J_URI, NEO4J_USER o NEO4J_PASSWORD. Revisa el archivo .env.")
+
     with GraphDatabase.driver(URI, auth=AUTH) as driver:
+        driver.verify_connectivity()
         with driver.session() as session:
             session.execute_write(crear_restricciones)
             session.execute_write(poblar_datos)
-            print("¡Base de datos en AuraDB cargada con volumen masivo de datos!")
+            print("Base de datos Neo4j inicializada correctamente.")
+
 
 if __name__ == "__main__":
-    if not URI or not AUTH[0] or not AUTH[1]:
-        print("Error: No se pudieron cargar las credenciales. Revisa tu archivo .env.")
-    else:
-        inicializar_bd()
+    inicializar_bd()
