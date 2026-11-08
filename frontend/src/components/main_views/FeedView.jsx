@@ -4,12 +4,14 @@ import ShellView from "../nav_layout/ShellView";
 import SidebarProfileView from "../nav_layout/SidebarProfileView";
 import RightPanelView from "../nav_layout/RightPanelView";
 import JobCardView from "../reusable/JobCardView";
+import CompanyDashboardView from "../reusable/CompanyDashboardView";
 import { getUser } from "../../api";
 import useFetch from "../../useFetch";
 
 export default function FeedView() {
   const user = getUser();
   const esUsuario = user?.rol === "usuario" && user?.entidad_id;
+  const esEmpresa = user?.rol === "empresa" && user?.entidad_id;
   // Al cambiar la red desde las sugerencias se recarga la cabecera (contactos y solicitudes).
   const [versionRed, setVersionRed] = useState(0);
 
@@ -20,12 +22,26 @@ export default function FeedView() {
     error,
   } = useFetch(esUsuario ? `/api/users/${user.entidad_id}/feed/jobs` : null);
 
+  if (esEmpresa) {
+    return (
+      <ShellView>
+        <CompanyDashboardView companyId={user.entidad_id} />
+      </ShellView>
+    );
+  }
+
   return (
     <ShellView>
       {!esUsuario ? (
         <div className="rounded-2xl border border-ink-100 bg-white p-8 text-center text-ink-500">
-          Hola, {user?.nombre}. La vista de {user?.rol} se habilitará en la
-          siguiente fase.
+          Hola, {user?.nombre}. Para tu cuenta de {user?.rol}, entra a{" "}
+          <Link
+            to="/analytics"
+            className="font-medium text-brand-600 hover:underline"
+          >
+            Análisis
+          </Link>{" "}
+          para ver las métricas del grafo.
         </div>
       ) : (
         <div className="space-y-8">

@@ -1,25 +1,39 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import api, { clearSession, getUser } from "../../api";
-import BrandMarkView from "../reusable/BrandMarkView";
 import {
   Compass,
   Briefcase,
+  Building2,
   User,
   Users,
   Network,
   MessageSquare,
   LogOut,
 } from "lucide-react";
+import api, { clearSession, getUser } from "../../api";
+import BrandMarkView from "../reusable/BrandMarkView";
 
-// to: null = sección que todavía no existe
-const ITEMS = [
-  { to: "/", label: "Inicio", icon: Compass, end: true },
-  { to: "/jobs", label: "Oportunidades", icon: Briefcase },
-  { to: "/profile", label: "Mi perfil", icon: User },
-  { to: "/analytics", label: "Análisis", icon: Network },
-  { to: "/network", label: "Mi red", icon: Users },
-  { to: null, label: "Mensajes", icon: MessageSquare },
-];
+// Menú según el tipo de cuenta. to: null = sección que todavía no existe.
+const ITEMS_POR_ROL = {
+  usuario: [
+    { to: "/", label: "Inicio", icon: Compass, end: true },
+    { to: "/jobs", label: "Oportunidades", icon: Briefcase },
+    { to: "/profile", label: "Mi perfil", icon: User },
+    { to: "/analytics", label: "Análisis", icon: Network },
+    { to: "/network", label: "Mi red", icon: Users },
+    { to: null, label: "Mensajes", icon: MessageSquare },
+  ],
+  empresa: [
+    { to: "/", label: "Inicio", icon: Compass, end: true },
+    { to: "/offers", label: "Mis ofertas", icon: Briefcase },
+    { to: "/company", label: "Perfil de empresa", icon: Building2 },
+    { to: "/analytics", label: "Análisis", icon: Network },
+    { to: null, label: "Mensajes", icon: MessageSquare },
+  ],
+  administrador: [
+    { to: "/", label: "Inicio", icon: Compass, end: true },
+    { to: "/analytics", label: "Análisis", icon: Network },
+  ],
+};
 
 const base =
   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors";
@@ -27,6 +41,7 @@ const base =
 export default function NavbarView() {
   const navigate = useNavigate();
   const user = getUser();
+  const items = ITEMS_POR_ROL[user?.rol] ?? ITEMS_POR_ROL.usuario;
 
   const handleLogout = async () => {
     try {
@@ -49,7 +64,7 @@ export default function NavbarView() {
       </div>
 
       <nav className="ml-auto flex items-center gap-1 md:ml-0 md:mt-10 md:flex-1 md:flex-col md:items-stretch">
-        {ITEMS.map(({ to, label, icon: Icon, end }) =>
+        {items.map(({ to, label, icon: Icon, end }) =>
           to ? (
             <NavLink
               key={label}
