@@ -3,6 +3,8 @@
 Ejecutar:  uvicorn main:app --reload --port 8000
 """
 
+import os
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,9 +24,14 @@ from backend_core.user_data import ofertas_recomendadas, perfil_usuario, sugeren
 
 app = FastAPI(title="DuProGraphic API")
 
+# Orígenes extra permitidos, separados por comas, p. ej. el dominio de producción:
+#   CORS_ORIGINS=https://miapp.com,https://www.miapp.com
+_origenes_extra = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    # Solo desarrollo local: cualquier puerto en localhost, 127.0.0.1 o [::1]
+    allow_origins=_origenes_extra,
+    # Desarrollo local: cualquier puerto en localhost, 127.0.0.1 o [::1]
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1|\[::1\]):\d+",
     allow_credentials=True,
     allow_methods=["*"],

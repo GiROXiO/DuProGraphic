@@ -1,16 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { saveSession } from "../../api";
-import {
-  Briefcase,
-  User,
-  Shield,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  Network,
-} from "lucide-react";
+import { Briefcase, User, Shield, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import BrandMarkView from "../reusable/BrandMarkView";
 
 const ROLES = [
   { id: "usuario", icon: User, label: "Usuario" },
@@ -53,175 +45,178 @@ export default function LoginView() {
   };
 
   return (
-    <div className="min-h-screen flex bg-[#f3f2ef]">
+    <div className="flex min-h-screen bg-paper">
       {/* Panel de marca (solo escritorio) */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-[linear-gradient(135deg,#004182,#0a66c2_60%,#378fe9)] text-white items-center justify-center p-12">
+      <div className="relative hidden flex-1 overflow-hidden bg-ink-950 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <svg
-          className="absolute inset-0 w-full h-full opacity-20"
-          viewBox="0 0 400 400"
+          className="absolute inset-0 h-full w-full"
+          viewBox="0 0 600 800"
           preserveAspectRatio="xMidYMid slice"
           aria-hidden="true"
         >
-          <g stroke="white" strokeWidth="1.2" fill="none">
-            <line x1="60" y1="80" x2="180" y2="150" />
-            <line x1="180" y1="150" x2="320" y2="90" />
-            <line x1="180" y1="150" x2="140" y2="290" />
-            <line x1="320" y1="90" x2="350" y2="230" />
-            <line x1="140" y1="290" x2="290" y2="330" />
-            <line x1="350" y1="230" x2="290" y2="330" />
-            <line x1="60" y1="80" x2="90" y2="220" />
-            <line x1="90" y1="220" x2="140" y2="290" />
+          <g stroke="#7c5cff" strokeWidth="1.2" opacity="0.55">
+            <line x1="90" y1="140" x2="300" y2="260" />
+            <line x1="300" y1="260" x2="500" y2="170" />
+            <line x1="300" y1="260" x2="210" y2="470" />
+            <line x1="500" y1="170" x2="520" y2="400" />
+            <line x1="210" y1="470" x2="420" y2="600" />
+            <line x1="520" y1="400" x2="420" y2="600" />
+            <line x1="90" y1="140" x2="120" y2="360" />
+            <line x1="120" y1="360" x2="210" y2="470" />
+            <line x1="420" y1="600" x2="300" y2="720" />
           </g>
-          <g fill="white">
-            <circle cx="60" cy="80" r="7" />
-            <circle cx="180" cy="150" r="11" />
-            <circle cx="320" cy="90" r="8" />
-            <circle cx="140" cy="290" r="10" />
-            <circle cx="350" cy="230" r="7" />
-            <circle cx="290" cy="330" r="9" />
-            <circle cx="90" cy="220" r="6" />
+          <g fill="#7c5cff">
+            <circle cx="90" cy="140" r="7" />
+            <circle cx="500" cy="170" r="9" />
+            <circle cx="120" cy="360" r="6" />
+            <circle cx="520" cy="400" r="8" />
+            <circle cx="420" cy="600" r="10" />
+            <circle cx="300" cy="720" r="6" />
           </g>
+          <circle cx="300" cy="260" r="14" fill="#2be0b0" />
+          <circle cx="210" cy="470" r="11" fill="#2be0b0" opacity="0.8" />
         </svg>
 
-        <div className="relative max-w-md">
-          <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur px-3 py-1.5 rounded-full text-sm font-medium mb-6">
-            <Network className="h-4 w-4" />
-            Red profesional en grafos
-          </div>
-          <h1 className="text-5xl font-extrabold tracking-tight leading-tight">
-            DuProGraphic
+        <div className="relative flex items-center gap-3">
+          <BrandMarkView className="h-10 w-10" />
+          <span className="text-xl font-bold tracking-tight">DuProGraphic</span>
+        </div>
+
+        <div className="relative max-w-lg">
+          <h1 className="text-5xl font-extrabold leading-[1.05] tracking-tight">
+            Tu carrera,
+            <br />
+            vista como un <span className="text-signal-400">grafo</span>.
           </h1>
-          <p className="mt-4 text-lg text-blue-100">
-            Conecta con personas, empresas y oportunidades a través de las
-            relaciones que realmente importan.
+          <p className="mt-5 text-lg text-ink-300">
+            Descubre oportunidades según tus habilidades y qué tan cerca estás
+            de ellas en la red de personas, empresas y proyectos.
           </p>
         </div>
+
+        <p className="relative text-sm text-ink-500">
+          Proyecto de Bases de Datos · Neo4j
+        </p>
       </div>
 
-      {/* Panel del formulario */}
-      <div className="flex-1 flex items-center justify-center px-4 py-12 sm:px-8">
+      {/* Formulario */}
+      <div className="flex flex-1 items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-md">
-          <h1 className="lg:hidden text-center text-3xl font-extrabold text-[#0a66c2] mb-8">
-            DuProGraphic
-          </h1>
-
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-            <h2 className="text-2xl font-bold text-gray-900">Bienvenido</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Inicia sesión para continuar
-            </p>
-
-            <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
-              {error && (
-                <div
-                  role="alert"
-                  className="bg-red-50 text-red-700 p-3 rounded-lg text-sm border border-red-200"
-                >
-                  {error}
-                </div>
-              )}
-
-              {/* Selector de rol */}
-              <div>
-                <span className="block text-sm font-medium text-gray-700 mb-2">
-                  Tipo de acceso
-                </span>
-                <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-xl">
-                  {ROLES.map((opcion) => (
-                    <button
-                      key={opcion.id}
-                      type="button"
-                      onClick={() => setRol(opcion.id)}
-                      aria-pressed={rol === opcion.id}
-                      className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm transition-all ${
-                        rol === opcion.id
-                          ? "bg-white text-[#0a66c2] font-semibold shadow"
-                          : "text-gray-500 hover:text-gray-800"
-                      }`}
-                    >
-                      <opcion.icon className="h-4 w-4" />
-                      {opcion.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Correo */}
-              <div>
-                <label
-                  htmlFor="correo"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Correo electrónico
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    id="correo"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    placeholder="tucorreo@ejemplo.com"
-                    value={correo}
-                    onChange={(e) => setCorreo(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a66c2] focus:border-transparent transition"
-                  />
-                </div>
-              </div>
-
-              {/* Contraseña */}
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Contraseña
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    id="password"
-                    type={verPassword ? "text" : "password"}
-                    required
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-11 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a66c2] focus:border-transparent transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setVerPassword((v) => !v)}
-                    aria-label={
-                      verPassword ? "Ocultar contraseña" : "Mostrar contraseña"
-                    }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                  >
-                    {verPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={cargando}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-full text-sm font-bold text-white bg-[#0a66c2] hover:bg-[#004182] disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0a66c2] transition-colors"
-              >
-                {cargando && (
-                  <span className="h-4 w-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                )}
-                {cargando ? "Ingresando..." : "Iniciar sesión"}
-              </button>
-            </form>
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <BrandMarkView />
+            <span className="text-xl font-bold tracking-tight text-ink-900">
+              DuProGraphic
+            </span>
           </div>
 
-          <p className="mt-6 text-center text-xs text-gray-400">
-            © DuProGraphic · Proyecto de Bases de Datos
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight text-ink-900">
+            Iniciar sesión
+          </h2>
+          <p className="mt-2 text-ink-500">Entra a tu red.</p>
+
+          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            {error && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                {error}
+              </div>
+            )}
+
+            <div>
+              <span className="mb-2 block text-sm font-medium text-ink-700">
+                Tipo de acceso
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {ROLES.map((opcion) => (
+                  <button
+                    key={opcion.id}
+                    type="button"
+                    onClick={() => setRol(opcion.id)}
+                    aria-pressed={rol === opcion.id}
+                    className={`flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-3 text-sm font-medium transition ${
+                      rol === opcion.id
+                        ? "border-brand-600 bg-brand-50 text-brand-700"
+                        : "border-ink-100 bg-white text-ink-500 hover:border-ink-300"
+                    }`}
+                  >
+                    <opcion.icon className="h-5 w-5" />
+                    {opcion.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="correo"
+                className="mb-1.5 block text-sm font-medium text-ink-700"
+              >
+                Correo electrónico
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
+                <input
+                  id="correo"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  placeholder="tucorreo@ejemplo.com"
+                  value={correo}
+                  onChange={(e) => setCorreo(e.target.value)}
+                  className="w-full rounded-xl border border-ink-100 bg-white py-3 pl-10 pr-3 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-sm font-medium text-ink-700"
+              >
+                Contraseña
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
+                <input
+                  id="password"
+                  type={verPassword ? "text" : "password"}
+                  required
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-xl border border-ink-100 bg-white py-3 pl-10 pr-11 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                />
+                <button
+                  type="button"
+                  onClick={() => setVerPassword((v) => !v)}
+                  aria-label={
+                    verPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-300 hover:text-ink-700"
+                >
+                  {verPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={cargando}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 font-semibold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cargando && (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              )}
+              {cargando ? "Ingresando..." : "Entrar"}
+            </button>
+          </form>
         </div>
       </div>
     </div>

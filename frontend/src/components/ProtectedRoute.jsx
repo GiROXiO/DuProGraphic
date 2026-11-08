@@ -41,7 +41,7 @@ export default function ProtectedRoute() {
 
   if (estado === "verificando") {
     return (
-      <div className="min-h-screen bg-[#f3f2ef] flex items-center justify-center text-gray-500">
+      <div className="flex min-h-screen items-center justify-center bg-paper text-ink-500">
         Verificando sesión...
       </div>
     );
@@ -49,7 +49,7 @@ export default function ProtectedRoute() {
 
   if (estado === "error") {
     return (
-      <div className="min-h-screen bg-[#f3f2ef] flex items-center justify-center text-red-600">
+      <div className="flex min-h-screen items-center justify-center bg-paper px-4 text-center text-red-600">
         No se pudo verificar la sesión. Revisa que el servidor esté activo.
       </div>
     );

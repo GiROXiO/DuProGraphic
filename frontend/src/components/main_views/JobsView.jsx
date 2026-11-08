@@ -1,86 +1,76 @@
-import { useState, useEffect } from "react";
-import api, { getUser } from "../../api";
-import NavbarView from "../nav_layout/NavbarView";
-import { Briefcase } from "lucide-react";
+import { useState } from "react";
+import { Search } from "lucide-react";
+import ShellView from "../nav_layout/ShellView";
+import JobCardView from "../reusable/JobCardView";
+import { getUser } from "../../api";
+import useFetch from "../../useFetch";
 
 export default function JobsView() {
-  const [ofertas, setOfertas] = useState([]);
-  const [loading, setLoading] = useState(true);
   const user = getUser();
+  const esUsuario = user?.rol === "usuario" && user?.entidad_id;
+  const [busqueda, setBusqueda] = useState("");
 
-  useEffect(() => {
-    const fetchJobs = async () => {
-      try {
-        // Llama a tu función de recomendación de Neo4j a través de FastAPI
-        const response = await api.get(
-          `/api/users/${user.entidad_id}/feed/jobs`,
-        );
-        setOfertas(response.data.data);
-      } catch (error) {
-        console.error("Error cargando ofertas:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchJobs();
-  }, [user.entidad_id]);
+  const {
+    data: ofertas,
+    loading,
+    error,
+  } = useFetch(esUsuario ? `/api/users/${user.entidad_id}/feed/jobs` : null);
+
+  const q = busqueda.trim().toLowerCase();
+  const filtradas = (ofertas ?? []).filter(
+    (o) =>
+      !q ||
+      [o.titulo, o.empresa, o.sector, ...(o.habilidades ?? [])]
+        .filter(Boolean)
+        .some((texto) => texto.toLowerCase().includes(q)),
+  );
 
   return (
-    <div className="min-h-screen bg-[#f3f2ef]">
-      <NavbarView />
-      <main className="max-w-4xl mx-auto px-4 pt-20">
-        <div className="bg-white rounded-lg shadow border border-gray-200 p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            Recomendado para ti
-          </h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Basado en tu perfil, habilidades ({user.rol}) y distancia en el
-            grafo.
-          </p>
+    <ShellView>
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-ink-900">
+          Oportunidades
+        </h1>
+        <p className="mt-1 text-sm text-ink-500">
+          Ordenadas por afinidad: tus habilidades, tu distancia en el grafo y
+          tus contactos.
+        </p>
+      </header>
 
-          {loading ? (
-            <div className="text-center py-8 text-gray-500">
-              Buscando oportunidades en Neo4j...
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {ofertas.map((oferta) => (
-                <div
-                  key={oferta.id}
-                  className="border-b border-gray-100 pb-4 last:border-0 flex items-start space-x-4"
-                >
-                  <div className="h-12 w-12 bg-gray-100 rounded flex items-center justify-center text-gray-500 flex-shrink-0">
-                    <Briefcase className="h-6 w-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-bold text-[#0a66c2] hover:underline cursor-pointer">
-                      {oferta.titulo}
-                    </h3>
-                    <p className="text-sm text-gray-900">{oferta.empresa}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {oferta.modalidad} · {oferta.experiencia}
-                    </p>
-                    {/* Renderiza las habilidades coincidentes de Neo4j */}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {oferta.habilidades?.slice(0, 3).map((hab, idx) => (
-                        <span
-                          key={idx}
-                          className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium"
-                        >
-                          ✓ {hab}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <button className="px-4 py-1.5 border border-[#0a66c2] text-[#0a66c2] rounded-full text-sm font-bold hover:bg-blue-50 transition-colors">
-                    Postular
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+      {!esUsuario ? (
+        <div className="rounded-2xl border border-ink-100 bg-white p-8 text-center text-ink-500">
+          Las ofertas recomendadas son para cuentas de usuario.
         </div>
-      </main>
-    </div>
+      ) : (
+        <>
+          <div className="relative mb-6">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" />
+            <input
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Filtrar por cargo, empresa o habilidad"
+              className="w-full rounded-xl border border-ink-100 bg-white py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+            />
+          </div>
+
+          {loading && <p className="text-ink-500">Buscando oportunidades...</p>}
+          {error && <p className="text-red-600">{error}</p>}
+          {!loading && !error && filtradas.length === 0 && (
+            <p className="text-ink-500">
+              {q
+                ? "Ninguna oferta coincide con tu búsqueda."
+                : "No hay ofertas recomendadas todavía."}
+            </p>
+          )}
+
+          <div className="space-y-4">
+            {filtradas.map((oferta) => (
+              <JobCardView key={oferta.id} oferta={oferta} />
+            ))}
+          </div>
+        </>
+      )}
+    </ShellView>
   );
 }

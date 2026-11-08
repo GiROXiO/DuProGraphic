@@ -113,10 +113,7 @@ NEO4J_USER=<USUARIO>
 NEO4J_PASSWORD=<CONTRASEÑA>
 ```
 
-El archivo `.env` está excluido de Git. No subas credenciales al repositorio. Usa una contraseña única de al menos 10 caracteres para el administrador.
-El correo del administrador debe ser distinto de los correos ya asociados a perfiles de usuario; esos correos quedan reservados para que sus titulares reclamen el perfil.
-
-Las variables `PERFIL_EMAIL_U1` a `PERFIL_EMAIL_U4` son opcionales y se usan por el script de asociación para enlazar correos con perfiles existentes. Los valores reales se mantienen en el `.env` local y no deben escribirse en el README ni en archivos versionados.
+El archivo `.env` está excluido de Git. No subas credenciales al repositorio.
 
 ## Cuentas y roles
 
