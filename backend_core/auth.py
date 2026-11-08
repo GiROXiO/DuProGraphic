@@ -7,12 +7,14 @@ import re
 import secrets
 import uuid
 import time
+import logging
 from urllib.parse import urlsplit
 from threading import Lock
 from datetime import datetime, timedelta, timezone
 
 from backend_core.connection import get_db_connection
 
+logger = logging.getLogger(__name__)
 
 ROL_USUARIO = "usuario"
 ROL_EMPRESA = "empresa"
@@ -594,7 +596,10 @@ def autenticar(correo, password, rol_esperado):
             "entidad_id": registro["entidad_id"],
             "nombre": registro["nombre"],
         }
+    except ConnectionError:
+        raise  # que main.py lo convierta en 503
     except Exception:
+        logger.exception("Error inesperado en autenticar")
         return None
 
 
