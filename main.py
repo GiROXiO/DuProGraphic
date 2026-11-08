@@ -26,6 +26,7 @@ from backend_core import analytics_data as analitica
 from backend_core import network_data as red
 from backend_core.company_data import ofertas_empresa
 from backend_core import applications_data as postulaciones
+from backend_core import company_data as empresas
 from backend_core.user_data import (
     actualizar_perfil,
     catalogo_habilidades,
@@ -464,7 +465,135 @@ def get_offer_candidates(offer_id: str, cuenta: dict = Depends(cuenta_actual)):
 
 # --- Empresa -------------------------------------------------------------------
 
+class EmpresaIn(BaseModel):
+    """Campos que la propia empresa puede editar. Cualquier otro campo se rechaza."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    nombre: str = Field(min_length=1, max_length=140)
+    sector: str = Field(min_length=1, max_length=_L["sector"])
+    descripcion: str | None = Field(default=None, max_length=_L["descripcion"])
+    ubicacion: str | None = Field(default=None, max_length=_L["ubicacion"])
+    tamano: Literal[
+        "1-10 personas",
+        "11-50 personas",
+        "51-200 personas",
+        "201-1000 personas",
+        "Más de 1000 personas",
+    ] | None = None
+    sitio_web: str | None = Field(default=None, max_length=_L["sitio_web"])
+
+    @field_validator("sitio_web")
+    @classmethod
+    def _enlace_valido(cls, valor):
+        if valor and not url_http_valida(valor):
+            raise ValueError("Escribe un enlace completo que comience con http:// o https://")
+        return valor
+
+
+class HabilidadRequerida(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=40)
+    obligatoria: bool = True
+
+
+class OfertaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    titulo: str = Field(min_length=1, max_length=160)
+    descripcion: str | None = Field(default=None, max_length=1800)
+    modalidad: Literal["remoto", "híbrido", "presencial"]
+    nivel_experiencia: Literal["Junior", "Semi-Senior", "Senior"]
+    habilidades: list[HabilidadRequerida] = Field(default_factory=list, max_length=20)
+
+    @field_validator("habilidades")
+    @classmethod
+    def _sin_repetidas(cls, valor):
+        ids = [h.id for h in valor]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Hay habilidades repetidas")
+        return valor
+
+
+class EstadoOfertaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    estado: Literal["abierta", "cerrada"]
+
+
+def _exigir_habilidades_existentes(habilidades: list[HabilidadRequerida]) -> None:
+    catalogo = {h["id"] for h in catalogo_habilidades()}
+    desconocidas = [h.id for h in habilidades if h.id not in catalogo]
+    if desconocidas:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Habilidades que no existen en el catálogo: {', '.join(desconocidas)}",
+        )
+
+
+def _ofertas_respuesta(company_id: str) -> dict:
+    return {"status": "success", "data": empresas.ofertas_empresa(company_id)}
+
+
+@app.get("/api/companies/{company_id}/profile")
+def get_company_profile(company_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Perfil público de una empresa; lo puede ver cualquier cuenta con sesión."""
+    perfil = empresas.perfil_empresa(company_id)
+    if not perfil:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return {"status": "success", "data": perfil}
+
+
+@app.put("/api/companies/{company_id}/profile")
+def update_company_profile(
+    company_id: str, datos: EmpresaIn, cuenta: dict = Depends(cuenta_actual)
+):
+    _exigir_propietario(cuenta, ROL_EMPRESA, company_id)
+    if not empresas.actualizar_empresa(company_id, datos.model_dump()):
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return {"status": "success", "data": empresas.perfil_empresa(company_id)}
+
+
 @app.get("/api/companies/{company_id}/offers")
 def get_company_offers(company_id: str, cuenta: dict = Depends(cuenta_actual)):
     _exigir_propietario(cuenta, ROL_EMPRESA, company_id)
     return {"status": "success", "data": ofertas_empresa(company_id)}
+
+
+@app.post("/api/companies/{company_id}/offers", status_code=201)
+def create_company_offer(
+    company_id: str, datos: OfertaIn, cuenta: dict = Depends(cuenta_actual)
+):
+    """Publica una oferta (queda abierta) con sus habilidades requeridas."""
+    _exigir_propietario(cuenta, ROL_EMPRESA, company_id)
+    _exigir_habilidades_existentes(datos.habilidades)
+    cuerpo = datos.model_dump()
+    oferta_id = empresas.crear_oferta(company_id, cuerpo, cuerpo["habilidades"])
+    if not oferta_id:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return _ofertas_respuesta(company_id)
+
+
+@app.put("/api/companies/{company_id}/offers/{offer_id}")
+def update_company_offer(
+    company_id: str, offer_id: str, datos: OfertaIn, cuenta: dict = Depends(cuenta_actual)
+):
+    """Edita una oferta de la empresa y deja exactamente las habilidades indicadas."""
+    _exigir_propietario(cuenta, ROL_EMPRESA, company_id)
+    _exigir_habilidades_existentes(datos.habilidades)
+    cuerpo = datos.model_dump()
+    if not empresas.actualizar_oferta(company_id, offer_id, cuerpo, cuerpo["habilidades"]):
+        raise HTTPException(status_code=404, detail="Oferta no encontrada en tu empresa")
+    return _ofertas_respuesta(company_id)
+
+
+@app.put("/api/companies/{company_id}/offers/{offer_id}/status")
+def set_company_offer_status(
+    company_id: str, offer_id: str, datos: EstadoOfertaIn, cuenta: dict = Depends(cuenta_actual)
+):
+    """Cierra o reabre una oferta de la empresa."""
+    _exigir_propietario(cuenta, ROL_EMPRESA, company_id)
+    if not empresas.cambiar_estado_oferta(company_id, offer_id, datos.estado):
+        raise HTTPException(status_code=404, detail="Oferta no encontrada en tu empresa")
+    return _ofertas_respuesta(company_id)
