@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from threading import RLock
 
@@ -8,6 +9,7 @@ from neo4j import GraphDatabase
 
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+logger = logging.getLogger(__name__)
 
 
 class Neo4jConnection:
@@ -25,7 +27,7 @@ class Neo4jConnection:
                 return self.driver
 
             if not self.uri or not self.user or not self.password:
-                st.error("Configura NEO4J_URI, NEO4J_USER y NEO4J_PASSWORD en el archivo .env.")
+                logger.error("Faltan variables de conexión de Neo4j en .env.")
                 return None
 
             driver = None
@@ -36,7 +38,7 @@ class Neo4jConnection:
             except Exception:
                 if driver is not None:
                     driver.close()
-                st.error("No se pudo conectar con Neo4j Aura. Revisa la red y las credenciales del archivo .env.")
+                logger.exception("No se pudo establecer la conexión con Neo4j Aura.")
             return self.driver
 
     def close(self):

@@ -7,6 +7,7 @@ import re
 import secrets
 import uuid
 import time
+from urllib.parse import urlsplit
 from threading import Lock
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +19,25 @@ ROL_EMPRESA = "empresa"
 ROL_ADMIN = "administrador"
 ROLES_PUBLICOS = {ROL_USUARIO, ROL_EMPRESA}
 ITERACIONES_HASH = 310_000
+SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
+MAX_PASSWORD_LENGTH = 256
+MAX_EMAIL_LENGTH = 254
+MAX_PROFILE_LENGTHS = {
+    "perfil_profesional": 180,
+    "universidad": 160,
+    "sector": 120,
+    "ubicacion": 120,
+    "acerca_de": 1200,
+    "educacion_detalle": 160,
+    "areas_interes": 180,
+    "experiencia": 1400,
+    "logros": 700,
+    "idiomas": 180,
+    "sitio_portafolio": 240,
+    "descripcion": 1200,
+    "sitio_web": 240,
+    "tamano": 80,
+}
 
 MAX_INTENTOS_LOGIN = 5
 VENTANA_LOGIN_SEGUNDOS = 300
@@ -31,12 +51,98 @@ _HASH_DUMMY = hashlib.pbkdf2_hmac(
 
 
 def normalizar_correo(correo):
-    return (correo or "").strip().lower()
+    return str(correo or "").strip().lower()
 
 
 def correo_valido(correo):
     correo = normalizar_correo(correo)
-    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo))
+    if len(correo) > MAX_EMAIL_LENGTH or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo):
+        return False
+    local, dominio = correo.rsplit("@", 1)
+    etiquetas = dominio.split(".")
+    return (
+        len(local) <= 64
+        and not local.startswith(".")
+        and not local.endswith(".")
+        and ".." not in local
+        and all(
+            1 <= len(etiqueta) <= 63
+            and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", etiqueta)
+            for etiqueta in etiquetas
+        )
+    )
+
+
+def url_http_valida(url):
+    """Acepta enlaces web completos y rechaza esquemas u hosts ambiguos."""
+    valor = str(url or "").strip()
+    if not valor:
+        return True
+    if any(caracter.isspace() or ord(caracter) < 32 for caracter in valor):
+        return False
+    try:
+        partes = urlsplit(valor)
+        puerto = partes.port
+        return (
+            len(valor) <= 240
+            and partes.scheme.lower() in {"http", "https"}
+            and bool(partes.hostname)
+            and partes.username is None
+            and partes.password is None
+            and (puerto is None or 1 <= puerto <= 65535)
+        )
+    except ValueError:
+        return False
+
+
+def _validar_password(password):
+    if not isinstance(password, str) or len(password) < 10:
+        return "password_corto"
+    if len(password) > MAX_PASSWORD_LENGTH:
+        return "password_largo"
+    try:
+        password.encode("utf-8")
+    except UnicodeEncodeError:
+        return "datos_invalidos"
+    return None
+
+
+def _validar_perfil(rol, perfil):
+    if not isinstance(perfil, dict):
+        return "datos_invalidos"
+    nombre = str(perfil.get("nombre") or "").strip()
+    if not nombre:
+        return "nombre_vacio"
+    if len(nombre) > 140:
+        return "datos_invalidos"
+
+    for propiedad, limite in MAX_PROFILE_LENGTHS.items():
+        valor = str(perfil.get(propiedad) or "").strip()
+        if len(valor) > limite:
+            return "datos_invalidos"
+        if propiedad in {"sitio_portafolio", "sitio_web"} and not url_http_valida(valor):
+            return "url_invalida"
+
+    if rol == ROL_USUARIO:
+        titular = str(perfil.get("perfil_profesional") or "").strip()
+        if not titular:
+            return "perfil_incompleto"
+        modalidad = str(perfil.get("modalidad_preferida") or "").strip()
+        if modalidad not in {"", "remoto", "híbrido", "presencial"}:
+            return "datos_invalidos"
+        try:
+            valor_anios = perfil.get("anios_experiencia") or 0
+            anios = int(valor_anios)
+            if float(valor_anios) != anios:
+                return "datos_invalidos"
+        except (TypeError, ValueError, OverflowError):
+            return "datos_invalidos"
+        if anios < 0 or anios > 50:
+            return "datos_invalidos"
+    elif rol == ROL_EMPRESA:
+        if not str(perfil.get("sector") or "").strip():
+            return "perfil_incompleto"
+    return None
 
 
 def _hash_password(password, salt):
@@ -75,7 +181,13 @@ def _asegurar_restriccion(driver):
 
 
 def _codigo_activacion_correcto(codigo, perfil_existente):
-    if not codigo or not perfil_existente["codigo_hash"] or not perfil_existente["codigo_expira"]:
+    if (
+        not isinstance(codigo, str)
+        or not codigo
+        or len(codigo) > 128
+        or not perfil_existente["codigo_hash"]
+        or not perfil_existente["codigo_expira"]
+    ):
         return False
     esperado = hashlib.sha256(codigo.strip().encode("utf-8")).hexdigest()
     try:
@@ -90,18 +202,20 @@ def _codigo_activacion_correcto(codigo, perfil_existente):
 
 def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
     """Registra una cuenta nueva o reclama un perfil ya existente con código."""
-    if rol not in ROLES_PUBLICOS:
+    if not isinstance(rol, str) or rol not in ROLES_PUBLICOS:
         return "rol_no_permitido", None
 
     correo = normalizar_correo(correo)
     if not correo_valido(correo):
         return "correo_invalido", None
-    if len(password or "") < 10:
-        return "password_corto", None
+    error_password = _validar_password(password)
+    if error_password:
+        return error_password, None
+    error_perfil = _validar_perfil(rol, perfil)
+    if error_perfil:
+        return error_perfil, None
 
-    nombre = (perfil.get("nombre") or "").strip()
-    if not nombre:
-        return "nombre_vacio", None
+    nombre = str(perfil.get("nombre") or "").strip()
 
     salt_hex, password_hash = _nueva_credencial(password)
     cuenta_id = uuid.uuid4().hex
@@ -109,6 +223,30 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
     creado = datetime.now(timezone.utc).isoformat()
     etiqueta = "Usuario" if rol == ROL_USUARIO else "Empresa"
     otro_tipo = "Empresa" if rol == ROL_USUARIO else "Usuario"
+    if rol == ROL_USUARIO:
+        extras = {
+            clave: str(perfil.get(clave) or "").strip()
+            for clave in (
+                "ubicacion", "acerca_de", "educacion_detalle", "areas_interes",
+                "experiencia", "logros", "idiomas", "sitio_portafolio",
+            )
+            if str(perfil.get(clave) or "").strip()
+        }
+        modalidad = str(perfil.get("modalidad_preferida") or "").strip()
+        if modalidad:
+            extras["modalidad_preferida"] = modalidad
+        try:
+            anios = int(perfil.get("anios_experiencia") or 0)
+        except (TypeError, ValueError):
+            anios = 0
+        if perfil.get("anios_experiencia") is not None:
+            extras["anios_experiencia"] = max(0, min(50, anios))
+    else:
+        extras = {
+            clave: str(perfil.get(clave) or "").strip()
+            for clave in ("ubicacion", "descripcion", "sitio_web", "tamano")
+            if str(perfil.get(clave) or "").strip()
+        }
 
     try:
         driver = _driver()
@@ -157,6 +295,7 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
                 }})
                 CREATE (c)-[:REPRESENTA_A]->(p)
                 REMOVE p.codigo_activacion_hash, p.codigo_activacion_expira
+                SET p += $extras
                 RETURN c.id AS id, c.email_normalizado AS correo, c.rol AS rol,
                        c.roles AS roles, p.id AS entidad_id, p.nombre AS nombre
                 """
@@ -174,6 +313,7 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
                     perfil_profesional: $detalle, universidad: $universidad,
                     correo_contacto: $correo
                 })
+                SET p += $extras
                 CREATE (c)-[:REPRESENTA_A]->(p)
                 RETURN c.id AS id, c.email_normalizado AS correo, c.rol AS rol,
                        c.roles AS roles, p.id AS entidad_id, p.nombre AS nombre
@@ -194,6 +334,7 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
                     id: $perfil_id, nombre: $nombre, sector: $detalle,
                     correo_contacto: $correo
                 })
+                    SET p += $extras
                 CREATE (c)-[:REPRESENTA_A]->(p)
                 RETURN c.id AS id, c.email_normalizado AS correo, c.rol AS rol,
                        c.roles AS roles, p.id AS entidad_id, p.nombre AS nombre
@@ -210,6 +351,7 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
                 creado=creado,
                 perfil_id=perfil_id,
                 nombre=nombre,
+                extras=extras,
                 **parametros,
             ).single()
             if resultado is None:
@@ -226,21 +368,25 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
 
 def crear_perfil_con_acceso_admin(rol, correo, password, perfil_id, perfil):
     """Crea un perfil con cuenta o recupera una cuenta desactivada sin historial borrado."""
-    if rol not in ROLES_PUBLICOS:
+    if not isinstance(rol, str) or rol not in ROLES_PUBLICOS:
         return "rol_no_permitido", None
     correo = normalizar_correo(correo)
-    perfil_id = (perfil_id or "").strip()
+    perfil_id = str(perfil_id or "").strip()
     if not correo_valido(correo):
         return "correo_invalido", None
-    if len(password or "") < 10:
-        return "password_corto", None
-    nombre = (perfil.get("nombre") or "").strip()
+    error_password = _validar_password(password)
+    if error_password:
+        return error_password, None
+    error_perfil = _validar_perfil(rol, perfil)
+    if error_perfil:
+        return error_perfil, None
+    nombre = str(perfil.get("nombre") or "").strip()
     if not perfil_id or not nombre:
         return "datos_incompletos", None
 
     etiqueta = "Usuario" if rol == ROL_USUARIO else "Empresa"
     prefijo = "U" if rol == ROL_USUARIO else "E"
-    if not perfil_id.startswith(prefijo):
+    if not re.fullmatch(rf"{prefijo}[A-Za-z0-9_-]{{1,63}}", perfil_id):
         return "id_invalido", None
     detalle = (
         (perfil.get("perfil_profesional") or "").strip()
@@ -392,7 +538,9 @@ def _registrar_intento_login(correo, correcto):
 
 def autenticar(correo, password, rol_esperado):
     correo = normalizar_correo(correo)
-    if not correo_valido(correo) or not password:
+    if not correo_valido(correo) or not isinstance(password, str) or not password:
+        return None
+    if len(password) > MAX_PASSWORD_LENGTH:
         return None
     if segundos_bloqueo_login(correo):
         return None
@@ -484,6 +632,114 @@ def validar_sesion(cuenta):
         return None
 
 
+def crear_sesion_persistente(cuenta):
+    """Crea un token aleatorio de navegador; Neo4j solo conserva su hash."""
+    cuenta_id = (cuenta or {}).get("id")
+    rol = (cuenta or {}).get("rol")
+    if not cuenta_id or rol not in {ROL_USUARIO, ROL_EMPRESA, ROL_ADMIN}:
+        return None
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    ahora = int(time.time())
+    expira = ahora + SESSION_TTL_SECONDS
+    version = int((cuenta or {}).get("auth_version", 0))
+    try:
+        driver = _driver()
+        with driver.session() as session:
+            session.run(
+                "CREATE CONSTRAINT sesion_token_hash_unico IF NOT EXISTS "
+                "FOR (s:Sesion) REQUIRE s.token_hash IS UNIQUE"
+            ).consume()
+            session.run(
+                "MATCH (s:Sesion) WHERE s.expira_epoch <= $ahora DELETE s",
+                ahora=ahora,
+            ).consume()
+            creado = session.run(
+                """
+                MATCH (c:Cuenta {id: $cuenta_id})
+                WHERE coalesce(c.activa, true)
+                  AND coalesce(c.auth_version, 0) = $version
+                  AND (c.rol = $rol OR $rol IN coalesce(c.roles, []))
+                CREATE (s:Sesion {
+                    token_hash: $token_hash, cuenta_id: c.id, rol: $rol,
+                    auth_version: $version, creada_epoch: $ahora,
+                    expira_epoch: $expira
+                })
+                RETURN s.token_hash AS hash
+                """,
+                cuenta_id=cuenta_id,
+                rol=rol,
+                version=version,
+                token_hash=token_hash,
+                ahora=ahora,
+                expira=expira,
+            ).single()
+        if not creado:
+            return None
+        return {"token": token, "expira_epoch": expira}
+    except Exception:
+        return None
+
+
+def restaurar_sesion_persistente(token):
+    """Valida un token del navegador y devuelve la cuenta ligada a él."""
+    token = str(token or "")
+    if not token or len(token) > 128 or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+        return "invalida", None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    ahora = int(time.time())
+    try:
+        driver = _driver()
+        with driver.session() as session:
+            registro = session.run(
+                """
+                MATCH (s:Sesion {token_hash: $token_hash})
+                MATCH (c:Cuenta {id: s.cuenta_id})
+                WHERE s.expira_epoch > $ahora
+                  AND coalesce(c.activa, true)
+                  AND coalesce(s.auth_version, 0) = coalesce(c.auth_version, 0)
+                  AND (s.rol = c.rol OR s.rol IN coalesce(c.roles, []))
+                OPTIONAL MATCH (c)-[:REPRESENTA_A]->(p)
+                RETURN c.id AS id, c.email_normalizado AS correo,
+                       s.rol AS rol, coalesce(c.roles, [c.rol]) AS roles,
+                       coalesce(c.auth_version, 0) AS auth_version,
+                       p.id AS entidad_id, coalesce(p.nombre, 'Administrador') AS nombre,
+                       s.expira_epoch AS expira_epoch
+                LIMIT 1
+                """,
+                token_hash=token_hash,
+                ahora=ahora,
+            ).single()
+            if registro:
+                cuenta = dict(registro)
+            else:
+                session.run(
+                    "MATCH (s:Sesion {token_hash: $token_hash}) DELETE s",
+                    token_hash=token_hash,
+                ).consume()
+                return "invalida", None
+        return "ok", cuenta
+    except Exception:
+        return "error_bd", None
+
+
+def revocar_sesion_persistente(token):
+    token = str(token or "")
+    if not token or len(token) > 128 or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+        return False
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    try:
+        with _driver().session() as session:
+            session.run(
+                "MATCH (s:Sesion {token_hash: $token_hash}) DELETE s",
+                token_hash=token_hash,
+            ).consume()
+        return True
+    except Exception:
+        return False
+
+
 def asegurar_admin_inicial():
     """Crea una cuenta administradora una sola vez desde variables privadas de entorno."""
     try:
@@ -505,7 +761,7 @@ def asegurar_admin_inicial():
     password = os.getenv("ADMIN_PASSWORD") or ""
     if not correo or not password:
         return "sin_configurar"
-    if not correo_valido(correo) or len(password) < 10:
+    if not correo_valido(correo) or len(password) < 10 or len(password) > MAX_PASSWORD_LENGTH:
         return "configuracion_invalida"
 
     salt_hex, password_hash = _nueva_credencial(password)
@@ -515,14 +771,32 @@ def asegurar_admin_inicial():
         def crear_admin(tx):
             existente = tx.run(
                 "MATCH (c:Cuenta {email_normalizado: $correo}) "
-                "RETURN c.rol AS rol, c.roles AS roles",
+                "RETURN c.id AS id, c.rol AS rol, c.roles AS roles, "
+                "coalesce(c.activa, true) AS activa, c.password_salt AS salt, "
+                "c.password_hash AS hash",
                 correo=correo,
             ).single()
             if existente:
                 roles_existentes = list(existente["roles"] or [])
                 if existente["rol"] not in roles_existentes:
                     roles_existentes.append(existente["rol"])
-                return "admin_existente" if ROL_ADMIN in roles_existentes else "correo_en_uso"
+                if ROL_ADMIN not in roles_existentes:
+                    return "correo_en_uso"
+                if existente["activa"]:
+                    return "admin_existente"
+                try:
+                    hash_configurado = _hash_password(password, bytes.fromhex(existente["salt"] or ""))
+                except (TypeError, ValueError):
+                    return "admin_inactivo_password_distinta"
+                if not existente["hash"] or not hmac.compare_digest(hash_configurado, existente["hash"]):
+                    return "admin_inactivo_password_distinta"
+                tx.run(
+                    "MATCH (c:Cuenta {id: $id}) "
+                    "SET c.activa = true, c.auth_version = coalesce(c.auth_version, 0) + 1 "
+                    "RETURN c.id AS id",
+                    id=existente["id"],
+                ).consume()
+                return "admin_reactivado"
 
             perfil_existente = tx.run(
                 "MATCH (p) WHERE (p:Usuario OR p:Empresa) "

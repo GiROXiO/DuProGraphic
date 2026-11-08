@@ -30,12 +30,12 @@ def listar_destinatarios(cuenta_id):
     with _driver().session() as session:
         return session.run(
             """
-            MATCH (c:Cuenta)
+            MATCH (c:Cuenta)-[:REPRESENTA_A]->(perfil)
             WHERE c.id <> $id
               AND coalesce(c.activa, true)
-              AND c.rol IN ['usuario', 'empresa']
-            OPTIONAL MATCH (c)-[:REPRESENTA_A]->(perfil)
-            RETURN c.id AS id, c.rol AS rol,
+              AND (perfil:Usuario OR perfil:Empresa)
+            RETURN c.id AS id,
+                   CASE WHEN perfil:Empresa THEN 'empresa' ELSE 'usuario' END AS rol,
                    coalesce(perfil.nombre, c.email_normalizado) AS nombre,
                    perfil.id AS perfil_id
             ORDER BY nombre
@@ -56,13 +56,22 @@ def listar_contextos(tipo):
 
 
 def iniciar_conversacion(origen_id, destino_id, contexto_tipo="General", contexto_id=""):
+    if (
+        not isinstance(origen_id, str)
+        or not isinstance(destino_id, str)
+        or not origen_id
+        or not destino_id
+        or len(origen_id) > 128
+        or len(destino_id) > 128
+    ):
+        return "destinatario_invalido", None
     if origen_id == destino_id:
         return "destinatario_invalido", None
-    if contexto_tipo not in {"General", "Proyecto", "Oferta"}:
+    if not isinstance(contexto_tipo, str) or contexto_tipo not in {"General", "Proyecto", "Oferta"}:
         return "contexto_invalido", None
     if contexto_tipo == "General":
         contexto_id = ""
-    elif not contexto_id:
+    elif not isinstance(contexto_id, str) or not contexto_id or len(contexto_id) > 128:
         return "contexto_invalido", None
 
     participantes = "|".join(sorted([origen_id, destino_id]))
@@ -84,11 +93,13 @@ def iniciar_conversacion(origen_id, destino_id, contexto_tipo="General", context
 
         consulta = f"""
         MATCH (origen:Cuenta {{id: $origen_id}}), (destino:Cuenta {{id: $destino_id}})
+        MATCH (origen)-[:REPRESENTA_A]->(perfil_origen)
+        MATCH (destino)-[:REPRESENTA_A]->(perfil_destino)
         {contexto_match}
         WHERE coalesce(origen.activa, true)
           AND coalesce(destino.activa, true)
-          AND origen.rol IN ['usuario', 'empresa']
-          AND destino.rol IN ['usuario', 'empresa']
+          AND (perfil_origen:Usuario OR perfil_origen:Empresa)
+          AND (perfil_destino:Usuario OR perfil_destino:Empresa)
         MERGE (c:Conversacion {{clave: $clave}})
         ON CREATE SET c.id = $id, c.creada = $creada,
                       c.contexto_tipo = $contexto_tipo,
@@ -161,18 +172,26 @@ def obtener_mensajes(conversacion_id, cuenta_id):
 
 
 def enviar_mensaje(conversacion_id, cuenta_id, texto):
-    texto = (texto or "").strip()
+    if not isinstance(texto, str):
+        return "vacio"
+    texto = texto.strip()
     if not texto:
         return "vacio"
     if len(texto) > 3000:
         return "largo"
 
     try:
-        with _driver().session() as session:
+        driver = _driver()
+        with driver.session() as session:
             resultado = session.run(
                 """
                 MATCH (c:Conversacion {id: $conversacion_id})-[:INCLUYE]->(autor:Cuenta {id: $cuenta_id})
                 WHERE coalesce(autor.activa, true)
+                  AND EXISTS {
+                      MATCH (c)-[:INCLUYE]->(destinatario:Cuenta)
+                      WHERE destinatario.id <> autor.id
+                        AND coalesce(destinatario.activa, true)
+                  }
                 CREATE (m:Mensaje {
                     id: $id, texto: $texto,
                     fecha: $fecha
@@ -187,6 +206,23 @@ def enviar_mensaje(conversacion_id, cuenta_id, texto):
                 texto=texto,
                 fecha=datetime.now(timezone.utc).isoformat(),
             ).single()
-        return "enviado" if resultado else "sin_acceso"
+        if resultado:
+            return "enviado"
+        with driver.session() as session:
+            acceso = session.run(
+                """
+                MATCH (c:Conversacion {id: $conversacion_id})-[:INCLUYE]->(autor:Cuenta {id: $cuenta_id})
+                OPTIONAL MATCH (c)-[:INCLUYE]->(otro:Cuenta)
+                WHERE otro.id <> autor.id
+                RETURN coalesce(autor.activa, true) AS autor_activo,
+                       count(otro) AS destinatarios,
+                       count(CASE WHEN coalesce(otro.activa, true) THEN otro END) AS activos
+                """,
+                conversacion_id=conversacion_id,
+                cuenta_id=cuenta_id,
+            ).single()
+        if acceso and acceso["destinatarios"] and not acceso["activos"]:
+            return "destinatario_inactivo"
+        return "sin_acceso"
     except Exception:
         return "error_bd"

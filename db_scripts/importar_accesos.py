@@ -3,6 +3,7 @@
 import argparse
 import csv
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +64,8 @@ def leer_csv(ruta):
     if encabezado_idx is None:
         raise ValueError("No encontré la fila de encabezados requerida en el CSV.")
     encabezados = [valor.strip() for valor in contenido[encabezado_idx]]
+    if len(encabezados) != len(set(encabezados)):
+        raise ValueError("El CSV repite uno o más nombres de columna.")
     faltantes = sorted(HEADERS - set(encabezados))
     if faltantes:
         raise ValueError("Faltan columnas requeridas: " + ", ".join(faltantes))
@@ -80,13 +83,17 @@ def leer_csv(ruta):
         roles = parsear_roles(tipo, fila.get("Rol(es) habilitados"))
         password = fila.get("Contraseña") or ""
         prefijo = "U" if tipo == "Usuario" else "E"
-        if not perfil_id.startswith(prefijo) or not nombre:
+        if not re.fullmatch(rf"{prefijo}[A-Za-z0-9_-]{{1,63}}", perfil_id) or not nombre or len(nombre) > 140:
             raise ValueError(f"ID o nombre inválido en la fila {numero}.")
         if not correo_valido(correo):
             raise ValueError(f"Correo inválido en la fila {numero}.")
         if len(password) < 10:
             raise ValueError(
                 f"La contraseña de la fila {numero} debe tener al menos 10 caracteres."
+            )
+        if len(password) > 256:
+            raise ValueError(
+                f"La contraseña de la fila {numero} no puede superar 256 caracteres."
             )
         filas.append({
             "tipo": tipo,
