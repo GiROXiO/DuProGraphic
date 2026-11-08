@@ -8,14 +8,20 @@ import {
   LogOut,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import api, { clearSession } from "../../api";
 
-export default function Navbar() {
+export default function NavbarView() {
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("duprographic_user"));
 
-  const handleLogout = () => {
-    localStorage.removeItem("duprographic_user");
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      // Revoca el token en el backend; si falla igual cerramos localmente.
+      await api.post("/api/auth/logout");
+    } catch {
+      // sin conexión o token ya vencido: no importa
+    }
+    clearSession();
+    navigate("/login", { replace: true });
   };
 
   return (

@@ -1,19 +1,19 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
-import Navbar from "./Navbar";
+import api, { getUser } from "../../api";
+import NavbarView from "../nav_layout/NavbarView";
 import { Briefcase } from "lucide-react";
 
-export default function Jobs() {
+export default function JobsView() {
   const [ofertas, setOfertas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const user = JSON.parse(localStorage.getItem("duprographic_user"));
+  const user = getUser();
 
   useEffect(() => {
     const fetchJobs = async () => {
       try {
         // Llama a tu función de recomendación de Neo4j a través de FastAPI
-        const response = await axios.get(
-          `http://localhost:8000/api/users/${user.entidad_id}/feed/jobs`,
+        const response = await api.get(
+          `/api/users/${user.entidad_id}/feed/jobs`,
         );
         setOfertas(response.data.data);
       } catch (error) {
@@ -27,7 +27,7 @@ export default function Jobs() {
 
   return (
     <div className="min-h-screen bg-[#f3f2ef]">
-      <Navbar />
+      <NavbarView />
       <main className="max-w-4xl mx-auto px-4 pt-20">
         <div className="bg-white rounded-lg shadow border border-gray-200 p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">

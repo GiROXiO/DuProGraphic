@@ -1,16 +1,12 @@
-import { Navigate } from "react-router-dom";
-import Navbar from "./Navbar";
+import NavbarView from "../nav_layout/NavbarView";
+import { getUser } from "../../api";
 
-export default function Feed() {
-  const user = JSON.parse(localStorage.getItem("duprographic_user"));
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+export default function FeedView() {
+  const user = getUser();
 
   return (
     <div className="min-h-screen bg-[#f3f2ef]">
-      <Navbar />
+      <NavbarView />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
