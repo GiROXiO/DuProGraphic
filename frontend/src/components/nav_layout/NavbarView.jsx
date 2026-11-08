@@ -6,6 +6,7 @@ import {
   Briefcase,
   User,
   Users,
+  Network,
   MessageSquare,
   LogOut,
 } from "lucide-react";
@@ -15,6 +16,7 @@ const ITEMS = [
   { to: "/", label: "Inicio", icon: Compass, end: true },
   { to: "/jobs", label: "Oportunidades", icon: Briefcase },
   { to: "/profile", label: "Mi perfil", icon: User },
+  { to: "/analytics", label: "Análisis", icon: Network },
   { to: null, label: "Mi red", icon: Users },
   { to: null, label: "Mensajes", icon: MessageSquare },
 ];

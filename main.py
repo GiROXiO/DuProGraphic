@@ -22,6 +22,7 @@ from backend_core.auth import (
     revocar_sesion_persistente,
     url_http_valida,
 )
+from backend_core import analytics_data as analitica
 from backend_core.company_data import ofertas_empresa
 from backend_core.user_data import (
     actualizar_perfil,
@@ -226,6 +227,114 @@ def get_network_suggestions(user_id: str, cuenta: dict = Depends(cuenta_actual))
         "status": "success",
         "data": {"personas": personas, "empresas": empresas, "proyectos": proyectos},
     }
+
+# --- Analítica y recorridos del grafo (solo lectura) ----------------------------
+# Los scripts Cypher están en analytics_dashboard/consultas_cypher/.
+
+def _exigir_admin(cuenta: dict) -> None:
+    if cuenta["rol"] != ROL_ADMIN:
+        raise HTTPException(status_code=403, detail="Solo el administrador puede ver este análisis")
+
+
+def _ok(data):
+    return {"status": "success", "data": data}
+
+
+@app.get("/api/analytics/summary")
+def analytics_summary(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.resumen())
+
+
+@app.get("/api/analytics/influential-users")
+def analytics_influential_users(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.usuarios_influyentes())
+
+
+@app.get("/api/analytics/demanded-skills")
+def analytics_demanded_skills(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.habilidades_demandadas())
+
+
+@app.get("/api/analytics/communities")
+def analytics_communities(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.comunidades())
+
+
+@app.get("/api/analytics/common-contacts")
+def analytics_common_contacts(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.contactos_en_comun())
+
+
+@app.get("/api/analytics/similar-skills")
+def analytics_similar_skills(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.habilidades_similares())
+
+
+@app.get("/api/analytics/project-overlaps")
+def analytics_project_overlaps(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(
+        {
+            "por_miembros": analitica.proyectos_por_miembros(),
+            "por_tecnologias": analitica.proyectos_por_tecnologias(),
+        }
+    )
+
+
+@app.get("/api/lookups/users")
+def lookup_users(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.usuarios_opciones())
+
+
+@app.get("/api/lookups/companies")
+def lookup_companies(cuenta: dict = Depends(cuenta_actual)):
+    """Lista de empresas (nombre e id) para los selectores; cualquier cuenta con sesión."""
+    return _ok(analitica.empresas_opciones())
+
+
+@app.get("/api/lookups/offers")
+def lookup_offers(cuenta: dict = Depends(cuenta_actual)):
+    _exigir_admin(cuenta)
+    return _ok(analitica.ofertas_opciones())
+
+
+@app.get("/api/users/{user_id}/path-to/{company_id}")
+def get_path_to_company(user_id: str, company_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Ruta más corta (hasta 6 relaciones) entre un usuario y una empresa; null si no hay."""
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    return _ok(analitica.ruta_mas_corta(user_id, company_id))
+
+
+@app.get("/api/users/{user_id}/recommendations")
+def get_user_recommendations(user_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    return _ok(
+        {
+            "contactos": analitica.recomendaciones_contactos(user_id),
+            "colaboradores": analitica.recomendaciones_colaboradores(user_id),
+        }
+    )
+
+
+@app.get("/api/offers/{offer_id}/candidates")
+def get_offer_candidates(offer_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Candidatos recomendados para una oferta: el administrador o la empresa que la publica."""
+    es_admin = cuenta["rol"] == ROL_ADMIN
+    es_duena = cuenta["rol"] == ROL_EMPRESA and analitica.empresa_publica_oferta(
+        cuenta["entidad_id"], offer_id
+    )
+    if not (es_admin or es_duena):
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta oferta")
+    return _ok(analitica.candidatos_para_oferta(offer_id))
+
+
 
 # --- Empresa -------------------------------------------------------------------
 
