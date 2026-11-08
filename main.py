@@ -23,6 +23,7 @@ from backend_core.auth import (
     url_http_valida,
 )
 from backend_core import analytics_data as analitica
+from backend_core import network_data as red
 from backend_core.company_data import ofertas_empresa
 from backend_core.user_data import (
     actualizar_perfil,
@@ -227,6 +228,89 @@ def get_network_suggestions(user_id: str, cuenta: dict = Depends(cuenta_actual))
         "status": "success",
         "data": {"personas": personas, "empresas": empresas, "proyectos": proyectos},
     }
+
+# --- Conexiones profesionales y perfil público ------------------------------------
+
+def _exigir_dueno(cuenta: dict, user_id: str) -> None:
+    """Acciones de red: solo la propia persona. El administrador no crea ni gestiona conexiones."""
+    if cuenta["rol"] != ROL_USUARIO or cuenta["entidad_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Solo puedes gestionar tu propia red")
+
+
+@app.get("/api/users/{user_id}/connections")
+def get_connections(user_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    return {
+        "status": "success",
+        "data": {
+            "conexiones": red.conexiones(user_id),
+            "recibidas": red.solicitudes_recibidas(user_id),
+            "enviadas": red.solicitudes_enviadas(user_id),
+        },
+    }
+
+
+@app.post("/api/users/{user_id}/connections/{other_id}", status_code=201)
+def send_connection_request(user_id: str, other_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Conectar con alguien. Es idempotente y nunca falla por un estado previo:
+
+    - ya conectados -> devuelve 'conectado'
+    - ya enviaste una solicitud -> devuelve 'enviada' (sin duplicarla)
+    - esa persona ya te había escrito -> se acepta y devuelve 'conectado'
+    - si no -> crea la solicitud y devuelve 'enviada'
+    """
+    _exigir_dueno(cuenta, user_id)
+    if user_id == other_id:
+        raise HTTPException(status_code=400, detail="No puedes conectarte contigo mismo")
+    estado = red.estado_relacion(user_id, other_id)
+    if estado is None:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    if estado in ("conectado", "enviada"):
+        return {"status": "success", "data": {"relacion": estado}}
+    if estado == "recibida":
+        if not red.aceptar_solicitud(other_id, user_id):
+            raise HTTPException(status_code=404, detail="La solicitud ya no está disponible")
+        return {"status": "success", "data": {"relacion": "conectado"}}
+    red.solicitar_conexion(user_id, other_id)
+    return {"status": "success", "data": {"relacion": "enviada"}}
+
+
+@app.post("/api/users/{user_id}/connection-requests/{other_id}/accept")
+def accept_connection_request(user_id: str, other_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Acepta la solicitud que other_id le envió a user_id."""
+    _exigir_dueno(cuenta, user_id)
+    if not red.aceptar_solicitud(other_id, user_id):
+        raise HTTPException(status_code=404, detail="La solicitud ya no está disponible")
+    return {"status": "success", "data": {"relacion": "conectado"}}
+
+
+@app.delete("/api/users/{user_id}/connection-requests/{other_id}")
+def withdraw_connection_request(user_id: str, other_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Rechaza la solicitud recibida de other_id, o cancela la que user_id le envió."""
+    _exigir_dueno(cuenta, user_id)
+    if not (red.retirar_solicitud(other_id, user_id) or red.retirar_solicitud(user_id, other_id)):
+        raise HTTPException(status_code=404, detail="La solicitud ya no está disponible")
+    return {"status": "success", "data": {"relacion": "ninguna"}}
+
+
+@app.get("/api/people/{person_id}")
+def get_public_profile(person_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Perfil público de una persona; lo puede ver cualquier cuenta con sesión."""
+    perfil = red.perfil_publico(person_id)
+    if not perfil:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    relacion = None
+    comunes = []
+    if cuenta["rol"] == ROL_USUARIO and cuenta.get("entidad_id"):
+        yo = cuenta["entidad_id"]
+        if yo == person_id:
+            relacion = "propio"
+        else:
+            relacion = red.estado_relacion(yo, person_id)
+            comunes = red.contactos_comunes(yo, person_id)
+    return {"status": "success", "data": {**perfil, "relacion": relacion, "contactos_en_comun": comunes}}
+
+
 
 # --- Analítica y recorridos del grafo (solo lectura) ----------------------------
 # Los scripts Cypher están en analytics_dashboard/consultas_cypher/.

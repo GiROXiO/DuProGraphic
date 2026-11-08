@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import useFetch from "../../useFetch";
 
 // Cabecera con el resumen del perfil del usuario.
@@ -7,6 +8,7 @@ export default function SidebarProfileView({ userId }) {
     loading,
     error,
   } = useFetch(`/api/users/${userId}/profile`);
+  const red = useFetch(`/api/users/${userId}/connections`);
 
   return (
     <section className="relative overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#0d0f1a_0%,#2b3354_55%,#6844f0_135%)] p-6 text-white sm:p-8">
@@ -49,6 +51,34 @@ export default function SidebarProfileView({ userId }) {
                 .filter(Boolean)
                 .join(" · ")}
             </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+              {red.data && (
+                <Link
+                  to="/network"
+                  className="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20"
+                >
+                  {red.data.conexiones.length}{" "}
+                  {red.data.conexiones.length === 1 ? "contacto" : "contactos"}
+                </Link>
+              )}
+              {red.data && red.data.recibidas.length > 0 && (
+                <Link
+                  to="/network"
+                  className="rounded-lg bg-signal-400 px-3 py-1.5 text-ink-950 hover:opacity-90"
+                >
+                  {red.data.recibidas.length}{" "}
+                  {red.data.recibidas.length === 1
+                    ? "solicitud pendiente"
+                    : "solicitudes pendientes"}
+                </Link>
+              )}
+              <Link
+                to="/profile"
+                className="rounded-lg bg-white/10 px-3 py-1.5 hover:bg-white/20"
+              >
+                Editar perfil
+              </Link>
+            </div>
           </div>
         </div>
       )}

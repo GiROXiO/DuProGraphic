@@ -17,7 +17,7 @@ const ITEMS = [
   { to: "/jobs", label: "Oportunidades", icon: Briefcase },
   { to: "/profile", label: "Mi perfil", icon: User },
   { to: "/analytics", label: "Análisis", icon: Network },
-  { to: null, label: "Mi red", icon: Users },
+  { to: "/network", label: "Mi red", icon: Users },
   { to: null, label: "Mensajes", icon: MessageSquare },
 ];
 

@@ -31,7 +31,7 @@ def sugerencias(usuario_id):
         MATCH (yo:Usuario {id: $id})
         MATCH (c:Cuenta)-[:REPRESENTA_A]->(p:Usuario)
         WHERE p <> yo AND coalesce(c.activa, true) = true
-          AND NOT EXISTS { MATCH (yo)-[:CONECTA_CON]-(p) }
+            AND NOT EXISTS { MATCH (yo)-[:CONECTA_CON]-(p) }
         OPTIONAL MATCH (yo)-[:CONECTA_CON]-(intermedio:Usuario)-[:CONECTA_CON]-(p)
         OPTIONAL MATCH (yo)-[:TIENE_HABILIDAD]->(h:Habilidad)<-[:TIENE_HABILIDAD]-(p)
         OPTIONAL MATCH (yo)-[:PARTICIPA_EN]->(proyecto:Proyecto)<-[:PARTICIPA_EN]-(p)
@@ -39,21 +39,24 @@ def sugerencias(usuario_id):
              collect(DISTINCT h.nombre) AS habilidades,
              count(DISTINCT proyecto) AS proyectos,
              size([tema IN split(toLower(coalesce(yo.areas_interes, '')), ',')
-                   WHERE trim(tema) <> '' AND
-                         toLower(coalesce(p.areas_interes, '')) CONTAINS trim(tema)]) AS temas
+                    WHERE trim(tema) <> '' AND
+                        toLower(coalesce(p.areas_interes, '')) CONTAINS trim(tema)]) AS temas
         RETURN p.id AS id, p.nombre AS nombre, p.perfil_profesional AS perfil,
-               p.ubicacion AS ubicacion, p.universidad AS universidad,
-               (yo.ubicacion IS NOT NULL AND toLower(yo.ubicacion) = toLower(coalesce(p.ubicacion, ''))) AS misma_ciudad,
-               (yo.universidad IS NOT NULL AND toLower(yo.universidad) = toLower(coalesce(p.universidad, ''))) AS misma_formacion,
-               c.id AS cuenta_id, contactos, habilidades, proyectos, temas,
-               round(
-                   CASE WHEN contactos * 7 > 20 THEN 20 ELSE contactos * 7 END +
-                   CASE WHEN size(habilidades) * 10 > 30 THEN 30 ELSE size(habilidades) * 10 END +
-                   CASE WHEN proyectos * 10 > 20 THEN 20 ELSE proyectos * 10 END +
-                   CASE WHEN temas * 5 > 10 THEN 10 ELSE temas * 5 END +
-                   CASE WHEN yo.ubicacion IS NOT NULL AND toLower(yo.ubicacion) = toLower(coalesce(p.ubicacion, '')) THEN 10 ELSE 0 END +
-                   CASE WHEN yo.universidad IS NOT NULL AND toLower(yo.universidad) = toLower(coalesce(p.universidad, '')) THEN 10 ELSE 0 END
-               ) AS afinidad
+            p.ubicacion AS ubicacion, p.universidad AS universidad,
+            (yo.ubicacion IS NOT NULL AND toLower(yo.ubicacion) = toLower(coalesce(p.ubicacion, ''))) AS misma_ciudad,
+            (yo.universidad IS NOT NULL AND toLower(yo.universidad) = toLower(coalesce(p.universidad, ''))) AS misma_formacion,
+            c.id AS cuenta_id, contactos, habilidades, proyectos, temas,
+            CASE WHEN EXISTS { MATCH (p)-[:SOLICITA_CONEXION]->(yo) } THEN 'recibida'
+                WHEN EXISTS { MATCH (yo)-[:SOLICITA_CONEXION]->(p) } THEN 'enviada'
+                ELSE 'ninguna' END AS relacion,
+            round(
+                CASE WHEN contactos * 7 > 20 THEN 20 ELSE contactos * 7 END +
+                CASE WHEN size(habilidades) * 10 > 30 THEN 30 ELSE size(habilidades) * 10 END +
+                CASE WHEN proyectos * 10 > 20 THEN 20 ELSE proyectos * 10 END +
+                CASE WHEN temas * 5 > 10 THEN 10 ELSE temas * 5 END +
+                CASE WHEN yo.ubicacion IS NOT NULL AND toLower(yo.ubicacion) = toLower(coalesce(p.ubicacion, '')) THEN 10 ELSE 0 END +
+                CASE WHEN yo.universidad IS NOT NULL AND toLower(yo.universidad) = toLower(coalesce(p.universidad, '')) THEN 10 ELSE 0 END
+            ) AS afinidad
         ORDER BY afinidad DESC, contactos DESC, nombre
         LIMIT 5
         """,

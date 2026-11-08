@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import ShellView from "../nav_layout/ShellView";
 import SidebarProfileView from "../nav_layout/SidebarProfileView";
@@ -9,6 +10,8 @@ import useFetch from "../../useFetch";
 export default function FeedView() {
   const user = getUser();
   const esUsuario = user?.rol === "usuario" && user?.entidad_id;
+  // Al cambiar la red desde las sugerencias se recarga la cabecera (contactos y solicitudes).
+  const [versionRed, setVersionRed] = useState(0);
 
   // Las ofertas solo aplican al rol usuario; con url null el hook no hace nada.
   const {
@@ -26,7 +29,7 @@ export default function FeedView() {
         </div>
       ) : (
         <div className="space-y-8">
-          <SidebarProfileView userId={user.entidad_id} />
+          <SidebarProfileView key={versionRed} userId={user.entidad_id} />
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <section>
@@ -59,7 +62,10 @@ export default function FeedView() {
               </div>
             </section>
 
-            <RightPanelView userId={user.entidad_id} />
+            <RightPanelView
+              userId={user.entidad_id}
+              onCambio={() => setVersionRed((v) => v + 1)}
+            />
           </div>
         </div>
       )}
