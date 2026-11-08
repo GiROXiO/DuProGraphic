@@ -1,6 +1,6 @@
 """Consultas de datos del portal de usuario (sin interfaz). Usadas por la API FastAPI."""
 
-from backend_core.portal_common import consultar
+from backend_core.portal_common import consultar, escribir
 
 RELACIONES_RUTA = (
     "CONECTA_CON|TRABAJA_EN|TIENE_HABILIDAD|PARTICIPA_EN|PUBLICA|REQUIERE|"
@@ -161,3 +161,74 @@ def ofertas_recomendadas(usuario_id):
         """,
         id=usuario_id,
     ) or []
+
+# --- Edición del perfil ---------------------------------------------------------
+
+def actualizar_perfil(usuario_id, datos):
+    """Reemplaza los campos editables del perfil. Devuelve [] si el usuario no existe."""
+    return escribir(
+        """
+        MATCH (u:Usuario {id: $id})
+        SET u.nombre = $nombre,
+            u.perfil_profesional = $perfil_profesional,
+            u.universidad = CASE WHEN trim(coalesce($universidad, '')) = '' THEN null ELSE trim($universidad) END,
+            u.ubicacion = CASE WHEN trim(coalesce($ubicacion, '')) = '' THEN null ELSE trim($ubicacion) END,
+            u.acerca_de = CASE WHEN trim(coalesce($acerca_de, '')) = '' THEN null ELSE trim($acerca_de) END,
+            u.experiencia = CASE WHEN trim(coalesce($experiencia, '')) = '' THEN null ELSE trim($experiencia) END,
+            u.areas_interes = CASE WHEN trim(coalesce($areas_interes, '')) = '' THEN null ELSE trim($areas_interes) END,
+            u.educacion_detalle = CASE WHEN trim(coalesce($educacion_detalle, '')) = '' THEN null ELSE trim($educacion_detalle) END,
+            u.anios_experiencia = $anios_experiencia,
+            u.modalidad_preferida = $modalidad_preferida,
+            u.sitio_portafolio = CASE WHEN trim(coalesce($sitio_portafolio, '')) = '' THEN null ELSE trim($sitio_portafolio) END,
+            u.idiomas = CASE WHEN trim(coalesce($idiomas, '')) = '' THEN null ELSE trim($idiomas) END,
+            u.logros = CASE WHEN trim(coalesce($logros, '')) = '' THEN null ELSE trim($logros) END
+        RETURN u.id AS id
+        """,
+        id=usuario_id,
+        **datos,
+    )
+
+
+# --- Habilidades ------------------------------------------------------------------
+
+def habilidades_usuario(usuario_id):
+    return consultar(
+        """
+        MATCH (u:Usuario {id: $id})-[r:TIENE_HABILIDAD]->(h:Habilidad)
+        RETURN h.id AS id, h.nombre AS nombre, h.categoria AS categoria,
+               coalesce(r.nivel_dominio, 'básico') AS nivel
+        ORDER BY nombre
+        """,
+        id=usuario_id,
+    ) or []
+
+
+def catalogo_habilidades():
+    return consultar(
+        "MATCH (h:Habilidad) RETURN h.id AS id, h.nombre AS nombre, h.categoria AS categoria ORDER BY nombre"
+    ) or []
+
+
+def guardar_habilidad(usuario_id, habilidad_id, nivel):
+    """Añade la habilidad o cambia su nivel. Devuelve [] si el usuario o la habilidad no existen."""
+    return escribir(
+        """
+        MATCH (u:Usuario {id: $u}), (h:Habilidad {id: $h})
+        MERGE (u)-[r:TIENE_HABILIDAD]->(h)
+        SET r.nivel_dominio = $nivel
+        RETURN h.id AS id
+        """,
+        u=usuario_id, h=habilidad_id, nivel=nivel,
+    )
+
+
+def quitar_habilidad(usuario_id, habilidad_id):
+    """Elimina la relación. Devuelve [] si el usuario no tenía esa habilidad."""
+    return escribir(
+        """
+        MATCH (:Usuario {id: $u})-[r:TIENE_HABILIDAD]->(h:Habilidad {id: $h})
+        DELETE r
+        RETURN h.id AS id
+        """,
+        u=usuario_id, h=habilidad_id,
+    )

@@ -1,12 +1,20 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Compass, Briefcase, Users, MessageSquare, LogOut } from "lucide-react";
 import api, { clearSession, getUser } from "../../api";
 import BrandMarkView from "../reusable/BrandMarkView";
+import {
+  Compass,
+  Briefcase,
+  User,
+  Users,
+  MessageSquare,
+  LogOut,
+} from "lucide-react";
 
 // to: null = sección que todavía no existe
 const ITEMS = [
   { to: "/", label: "Inicio", icon: Compass, end: true },
   { to: "/jobs", label: "Oportunidades", icon: Briefcase },
+  { to: "/profile", label: "Mi perfil", icon: User },
   { to: null, label: "Mi red", icon: Users },
   { to: null, label: "Mensajes", icon: MessageSquare },
 ];
