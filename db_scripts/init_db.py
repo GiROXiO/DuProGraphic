@@ -19,6 +19,7 @@ def crear_restricciones(tx):
     tx.run("CREATE CONSTRAINT empresa_correo_unico IF NOT EXISTS FOR (e:Empresa) REQUIRE e.correo_contacto IS UNIQUE")
     tx.run("CREATE CONSTRAINT conversacion_clave_unica IF NOT EXISTS FOR (c:Conversacion) REQUIRE c.clave IS UNIQUE")
     tx.run("CREATE CONSTRAINT mensaje_id_unico IF NOT EXISTS FOR (m:Mensaje) REQUIRE m.id IS UNIQUE")
+    tx.run("CREATE CONSTRAINT sesion_token_hash_unico IF NOT EXISTS FOR (s:Sesion) REQUIRE s.token_hash IS UNIQUE")
 
 def poblar_datos(tx):
     # ON CREATE conserva los nodos y relaciones que ya existen en Aura.

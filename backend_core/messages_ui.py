@@ -14,13 +14,19 @@ def _fecha_legible(fecha):
         return fecha
 
 
+@st.fragment(run_every=5)
 def renderizar(cuenta):
     cuenta_id = cuenta.get("id")
     if not cuenta_id:
         st.error("No se pudo identificar tu cuenta para abrir los mensajes.")
         return
 
-    st.caption("Mensajes internos entre cuentas. Puedes indicar si escribes por un proyecto o una oferta.")
+    destinatario_preferido = st.session_state.pop("mensajes_destinatario_preseleccionado", None)
+
+    st.caption(
+        "Mensajes internos entre cuentas. Puedes indicar si escribes por un proyecto o una oferta. "
+        "La bandeja se actualiza automáticamente cada cinco segundos."
+    )
     try:
         destinatarios = messages.listar_destinatarios(cuenta_id)
         conversaciones = messages.obtener_conversaciones(cuenta_id)
@@ -60,8 +66,11 @@ def renderizar(cuenta):
                     sustantivo = "proyectos" if contexto_tipo == "Proyecto" else "ofertas"
                     st.info(f"No hay {sustantivo} disponibles.")
             with st.form("form_nueva_conversacion"):
+                if destinatario_preferido in opciones and "nuevo_mensaje_destinatario" not in st.session_state:
+                    st.session_state["nuevo_mensaje_destinatario"] = destinatario_preferido
                 destinatario_id = st.selectbox(
-                    "Enviar a", list(opciones), format_func=lambda x: opciones[x]
+                    "Enviar a", list(opciones), format_func=lambda x: opciones[x],
+                    key="nuevo_mensaje_destinatario",
                 )
                 iniciar = st.form_submit_button("Abrir conversacion", width="stretch")
             if iniciar:
@@ -72,6 +81,7 @@ def renderizar(cuenta):
                     contexto_id,
                 )
                 if estado == "abierta":
+                    st.session_state.pop("mensajes_destinatario_preseleccionado", None)
                     st.session_state["conversacion_activa"] = conversacion_id
                     st.session_state["seleccionar_conversacion"] = conversacion_id
                     st.rerun()
@@ -152,5 +162,7 @@ def renderizar(cuenta):
                 st.warning("El mensaje supera el limite de 3000 caracteres.")
             elif estado == "sin_acceso":
                 st.error("Esta cuenta no participa en esa conversacion.")
+            elif estado == "destinatario_inactivo":
+                st.info("No puedes enviar mensajes a esta cuenta porque está desactivada.")
             else:
                 st.error("No se pudo enviar el mensaje.")

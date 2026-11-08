@@ -11,6 +11,105 @@ NOMBRES_ROL = {
 }
 
 
+def _editor_roles(conexion, cuentas):
+    if not cuentas:
+        return
+    st.markdown("#### Roles y tipo de acceso")
+    st.caption("Una cuenta puede tener su rol de perfil y el rol de administrador. Los cambios cierran las sesiones activas de esa cuenta.")
+    opciones_cuenta = {c["correo"]: f"{c['nombre']} · {c['correo']}" for c in cuentas}
+    correo = st.selectbox("Cuenta que vas a administrar", list(opciones_cuenta), format_func=lambda x: opciones_cuenta[x], key="cuenta_editar_roles")
+    cuenta = next(c for c in cuentas if c["correo"] == correo)
+    if cuenta["tipo"] == "Usuario":
+        roles_permitidos = ["usuario", "administrador"]
+        rol_perfil = "usuario"
+    elif cuenta["tipo"] == "Empresa":
+        roles_permitidos = ["empresa", "administrador"]
+        rol_perfil = "empresa"
+    else:
+        roles_permitidos = ["administrador"]
+        rol_perfil = "administrador"
+    actuales = [r for r in cuenta["roles"] if r in roles_permitidos]
+    if rol_perfil not in actuales:
+        actuales.insert(0, rol_perfil)
+    if not cuenta["activa"]:
+        st.info("Esta cuenta está desactivada. Primero reactívala desde el flujo de acceso o crea una nueva cuenta para el perfil.")
+    clave_widget = f"roles_de_{cuenta['correo']}"
+    roles = st.multiselect(
+        "Roles disponibles para esta cuenta",
+        roles_permitidos,
+        default=actuales,
+        format_func=lambda r: NOMBRES_ROL[r],
+        key=clave_widget,
+        disabled=not cuenta["activa"],
+    )
+    if rol_perfil not in roles:
+        st.warning(f"Mantén el rol {NOMBRES_ROL[rol_perfil]} para que la cuenta conserve acceso a su perfil.")
+    if not cuenta["activa"]:
+        return
+    principal = st.selectbox(
+        "Rol que se abre al iniciar sesión",
+        roles_permitidos,
+        index=roles_permitidos.index(cuenta["rol"]) if cuenta["rol"] in roles_permitidos else 0,
+        key=f"rol_principal_{cuenta['correo']}",
+    )
+    if st.button("Guardar roles", key=f"guardar_roles_{cuenta['correo']}", disabled=not roles or rol_perfil not in roles):
+        if principal not in roles:
+            st.warning("El rol principal debe estar incluido entre los roles activos.")
+            return
+        roles_nuevos = list(dict.fromkeys(roles))
+        try:
+            with conexion.driver.session() as session:
+                def actualizar(tx):
+                    actual = tx.run(
+                        """
+                        MATCH (c:Cuenta {email_normalizado: $correo})
+                        RETURN c.id AS id, c.rol AS rol,
+                               coalesce(c.roles, [c.rol]) AS roles,
+                               coalesce(c.activa, true) AS activa
+                        """,
+                        correo=correo,
+                    ).single()
+                    if not actual or not actual["activa"]:
+                        return "no_disponible"
+                    roles_actuales = set(actual["roles"] or [])
+                    if actual["rol"]:
+                        roles_actuales.add(actual["rol"])
+                    if "administrador" in roles_actuales and "administrador" not in roles_nuevos:
+                        admins = tx.run(
+                            """
+                            MATCH (admin:Cuenta)
+                            WHERE coalesce(admin.activa, true) = true
+                              AND ('administrador' IN coalesce(admin.roles, [admin.rol])
+                                   OR admin.rol = 'administrador')
+                            RETURN count(admin) AS total
+                            """
+                        ).single()["total"]
+                        if admins <= 1:
+                            return "ultimo_admin"
+                    actualizado = tx.run(
+                        """
+                        MATCH (c:Cuenta {id: $id})
+                        WHERE coalesce(c.activa, true) = true
+                        SET c.roles = $roles, c.rol = $principal,
+                            c.auth_version = coalesce(c.auth_version, 0) + 1
+                        RETURN c.id AS id
+                        """,
+                        id=actual["id"], roles=roles_nuevos, principal=principal,
+                    ).single()
+                    return "guardado" if actualizado else "no_disponible"
+
+                estado = session.execute_write(actualizar)
+            if estado == "guardado":
+                st.success("Los roles se actualizaron. La cuenta tendrá que iniciar sesión otra vez.")
+                st.rerun()
+            elif estado == "ultimo_admin":
+                st.error("No se puede quitar el rol al último administrador activo.")
+            else:
+                st.warning("La cuenta ya no está disponible.")
+        except Exception:
+            st.error("No se pudieron actualizar los roles de la cuenta.")
+
+
 def renderizar():
     st.info(
         "El correo es el usuario de acceso. Neo4j guarda las contraseñas como hashes. "
@@ -66,6 +165,9 @@ def renderizar():
             for cuenta in cuentas
         ]
         st.dataframe(filas, width="stretch", hide_index=True)
+
+    with st.expander("Cambiar roles de una cuenta", expanded=False):
+        _editor_roles(conexion, cuentas)
 
     try:
         with conexion.driver.session() as session:

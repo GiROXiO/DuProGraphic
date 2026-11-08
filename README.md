@@ -17,12 +17,19 @@ Aplicación web de gestión y análisis de una red profesional. Usa Streamlit y 
 ### Relaciones
 
 - `CONECTA_CON`: conexiones profesionales entre usuarios.
+- `SOLICITA_CONEXION`: invitación pendiente que la persona receptora puede aceptar o rechazar.
+- `SOLICITA_DESCONEXION`: solicitud para cerrar una conexión, que requiere respuesta de la otra persona.
 - `TRABAJA_EN`: vincula usuarios con empresas.
 - `TIENE_HABILIDAD`: relaciona usuarios con habilidades.
 - `PARTICIPA_EN`: vincula usuarios con proyectos.
 - `PUBLICA`: relaciona empresas con ofertas.
+- `PUBLICA_PROYECTO`: vincula una empresa con un proyecto que presenta en su perfil.
+- `PERTENECE_A`: relaciona una oferta con el proyecto al que pertenece, cuando aplica.
 - `REQUIERE`: conecta ofertas con habilidades requeridas.
 - `POSTULA_A`: registra postulaciones de usuarios a ofertas.
+- `TRABAJO_EN_OFERTA`: registra que una persona fue contratada para una oferta aceptada.
+- `SOLICITA_EXPERIENCIA`: petición de una persona para que una empresa valide su experiencia laboral.
+- `SOLICITA_PARTICIPACION`: petición de una persona para que la empresa propietaria valide su participación en un proyecto.
 - `SIGUE_A`: usuarios que siguen empresas.
 - `USA_TECNOLOGIA`: tecnologías asociadas a proyectos.
 - `REPRESENTA_A`: vincula una cuenta con su perfil Usuario o Empresa.
@@ -43,9 +50,12 @@ DuProGraphic/
 │   ├── accounts_ui.py
 │   ├── connection.py
 │   ├── crud_ui.py
+│   ├── company_portal.py
 │   ├── messages.py
 │   ├── messages_ui.py
-│   └── role_ui.py
+│   ├── portal_common.py
+│   ├── role_ui.py
+│   └── user_portal.py
 ├── business_logic/
 │   └── logic_ui.py
 ├── analytics_dashboard/
@@ -94,8 +104,8 @@ Las variables `PERFIL_EMAIL_U1` a `PERFIL_EMAIL_U4` son opcionales y se usan por
 ## Cuentas y roles
 
 - **Usuario:** tiene un perfil profesional, conexiones, habilidades, proyectos, postulaciones y mensajes.
-- **Empresa / reclutador:** administra su perfil, ofertas, postulaciones y mensajes.
-- **Administrador:** gestiona los datos, las relaciones, los accesos y la analítica. No existe registro público para este rol.
+- **Empresa / reclutador:** administra su perfil público, proyectos, ofertas, postulaciones y mensajes.
+- **Administrador:** administra registros, cuentas, roles y analítica. No empareja usuarios ni crea conexiones profesionales desde el portal.
 
 Las cuentas se guardan como nodos Cuenta relacionados con Usuario o Empresa mediante REPRESENTA_A. La contraseña se guarda como hash con sal; no se almacena en texto plano. El correo normalizado es el usuario de acceso.
 
@@ -107,10 +117,12 @@ El prototipo no envía correos de verificación ni de recuperación. Los código
 
 La base de ejemplo contiene 16 perfiles de usuario y 5 empresas. Cuatro usuarios tienen también rol de administrador. Las direcciones que terminan en @duprographic.test son nombres de acceso ficticios; no reciben mensajes.
 
+El Excel de accesos está separado en las hojas `Administradores`, `Usuarios` y `Empresas`. El importador necesita reunir esas filas en `db_scripts/accesos_demo.csv`; las cuentas administradoras se registran como perfiles de tipo `Usuario` con los roles `Usuario` y `Administrador`.
+
 Para reconstruir esas cuentas en una base nueva:
 
 1. Ejecuta python db_scripts/init_db.py para crear las restricciones y los perfiles.
-2. Desde el Excel de accesos, guarda la hoja Accesos como CSV UTF-8 en db_scripts/accesos_demo.csv.
+2. Coloca el CSV consolidado en `db_scripts/accesos_demo.csv`. Debe incluir las columnas `Tipo de perfil`, `ID perfil`, `Nombre`, `Correo / usuario`, `Rol(es) habilitados` y `Contraseña`.
 3. Ejecuta python db_scripts/importar_accesos.py.
 
 El importador enlaza cada cuenta por ID de perfil y guarda en Neo4j los hashes de contraseña. El CSV local está excluido de Git. Repetir el comando conserva las contraseñas existentes; agrega --reemplazar-claves solo si quieres volver a aplicar las claves del CSV. No subas el Excel ni el CSV al repositorio.
@@ -123,7 +135,7 @@ Con el entorno virtual activo y el .env configurado, ejecuta:
 
 El script crea las restricciones de unicidad que falten y carga los 16 usuarios de ejemplo, las empresas, las ofertas, las habilidades, los proyectos y sus relaciones. Usa MERGE y ON CREATE SET: al volverlo a ejecutar no borra nodos ni reemplaza propiedades existentes.
 
-Para habilitar los accesos de la hoja, expórtala como db_scripts/accesos_demo.csv en formato CSV UTF-8 y ejecuta:
+Para cargar las cuentas desde ese CSV, ejecuta:
 
     python db_scripts/importar_accesos.py
 
@@ -141,10 +153,14 @@ Streamlit abrirá la aplicación en `http://localhost:8501`.
 
 ## Funciones de la aplicación
 
-- **Gestión de entidades:** crear, consultar, actualizar y eliminar usuarios, empresas y ofertas. Los perfiles nuevos de usuario o empresa requieren un correo y una contraseña inicial.
-- **Acceso por rol:** registro e inicio de sesión para usuarios, empresas y administradores; cada sesión valida que la cuenta siga activa y conserve el rol.
-- **Mensajería interna:** conversaciones entre usuarios y empresas, con tema general o asociadas a un proyecto o una oferta. Solo las cuentas que participan pueden leer o enviar mensajes.
-- **Lógica de negocio:** crear conexiones profesionales, asignar habilidades, vincular usuarios con empresas y proyectos, publicar ofertas desde empresas, asociar habilidades requeridas, registrar postulaciones a ofertas abiertas y publicadas, y buscar rutas entre usuarios y empresas.
+- **Portal de usuario:** perfil editable con habilidades, experiencia empresarial y proyectos; directorios de profesionales y empresas con perfiles públicos; ofertas ordenadas por distancia en la red y coincidencias de habilidades; recomendaciones de contactos, empresas, proyectos y empleo.
+- **Conexiones bilaterales:** una conexión se establece cuando la persona invitada la acepta. También se puede solicitar una desconexión que debe aceptar la otra persona.
+- **Portal de empresa:** perfil público editable con equipo, proyectos y ofertas; creación y asociación de proyectos y vacantes; perfiles completos de postulantes; candidaturas activas separadas de las aceptadas o rechazadas; aprobación de solicitudes de experiencia y de participación en proyectos.
+- **Administración:** CRUD separado para usuarios, empresas, ofertas y proyectos; gestión de roles desde Cuentas y accesos; consultas y analítica del grafo.
+- **Acceso por rol:** registro e inicio de sesión para usuarios, empresas y administradores; cada sesión valida que la cuenta siga activa y conserve el rol. Al elegir "Mantener la sesión iniciada", el acceso se conserva en ese navegador por hasta 14 días y se puede revocar al cerrar sesión.
+- **Mensajería interna:** conversaciones entre usuarios y empresas, con tema general o asociadas a un proyecto o una oferta. Solo las cuentas que participan pueden leer o enviar mensajes; la conversación abierta consulta mensajes nuevos cada cinco segundos.
+- **Datos de perfil:** cada usuario controla sus habilidades, experiencia y proyectos; las cuentas de empresa solo gestionan los proyectos y ofertas que publican.
+- **Verificación de trayectoria:** las experiencias laborales nuevas y las participaciones en proyectos publicados por una empresa quedan pendientes hasta que esa organización las apruebe. Al aceptar una candidatura, la aplicación registra el vínculo laboral y su relación con la oferta; los proyectos deben estar publicados por una empresa para que esta pueda validarlos.
 - **Analítica:** recomendaciones de contactos, empleos, colaboradores y candidatos; contactos en común; habilidades similares; usuarios con más conexiones; habilidades más demandadas; conexiones entre proyectos y rutas en el grafo.
 
 La vista de comunidades aplica Label Propagation sobre `CONECTA_CON`; no requiere Graph Data Science (GDS).

@@ -1,14 +1,18 @@
 """Asocia correos y sincroniza el usuario de Cuenta, si ya existe."""
 
 import os
-import re
 from pathlib import Path
+import sys
 
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+load_dotenv(ROOT / ".env")
+
+from backend_core.auth import correo_valido, normalizar_correo
 
 URI = os.getenv("NEO4J_URI")
 AUTH = (os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASSWORD"))
@@ -90,10 +94,12 @@ def main():
 
     perfiles = []
     for perfil_id, nombre, variable in ASOCIACIONES:
-        correo = (os.getenv(variable) or "").strip().lower()
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo):
+        correo = normalizar_correo(os.getenv(variable))
+        if not correo_valido(correo):
             raise SystemExit(f"Configura un correo válido en {variable} antes de ejecutar esta asociacion.")
         perfiles.append((perfil_id, nombre, correo))
+    if len({correo for _, _, correo in perfiles}) != len(perfiles):
+        raise SystemExit("Las variables PERFIL_EMAIL_U1 a U4 deben contener correos diferentes.")
 
     with GraphDatabase.driver(URI, auth=AUTH) as driver:
         driver.verify_connectivity()

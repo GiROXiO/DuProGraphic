@@ -6,6 +6,7 @@ WHERE toLower(trim(coalesce(oferta.estado, ''))) = 'abierta'
 OPTIONAL MATCH (oferta)-[:REQUIERE]->(requerida:Habilidad)
 WITH oferta, collect(DISTINCT requerida) AS habilidades_requeridas
 MATCH (candidato:Usuario)
+WHERE NOT EXISTS { MATCH (candidato)-[:POSTULA_A]->(oferta) }
 OPTIONAL MATCH (candidato)-[:TIENE_HABILIDAD]->(poseida:Habilidad)
 WITH oferta, candidato, habilidades_requeridas,
      collect(DISTINCT poseida) AS habilidades_candidato
