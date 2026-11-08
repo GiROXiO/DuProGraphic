@@ -25,6 +25,7 @@ from backend_core.auth import (
 from backend_core import analytics_data as analitica
 from backend_core import network_data as red
 from backend_core.company_data import ofertas_empresa
+from backend_core import applications_data as postulaciones
 from backend_core.user_data import (
     actualizar_perfil,
     catalogo_habilidades,
@@ -309,6 +310,47 @@ def get_public_profile(person_id: str, cuenta: dict = Depends(cuenta_actual)):
             relacion = red.estado_relacion(yo, person_id)
             comunes = red.contactos_comunes(yo, person_id)
     return {"status": "success", "data": {**perfil, "relacion": relacion, "contactos_en_comun": comunes}}
+
+# --- Postulaciones a ofertas ------------------------------------------------------
+
+@app.get("/api/users/{user_id}/applications")
+def get_applications(user_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    return {"status": "success", "data": postulaciones.mis_postulaciones(user_id)}
+
+
+@app.post("/api/users/{user_id}/applications/{offer_id}", status_code=201)
+def apply_to_offer(user_id: str, offer_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Postularse a una oferta abierta. Es idempotente: si ya existe, devuelve su estado."""
+    _exigir_dueno(cuenta, user_id)
+    oferta = postulaciones.oferta_publicada(offer_id)
+    if oferta is None:
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+    actual = postulaciones.estado_postulacion(user_id, offer_id)
+    if actual is not None:
+        return {"status": "success", "data": {"estado": actual, "ya_postulado": True}}
+    if not oferta["abierta"]:
+        raise HTTPException(status_code=409, detail="La oferta ya no está abierta")
+    filas = postulaciones.postular(user_id, offer_id)
+    if not filas:
+        raise HTTPException(status_code=404, detail="Usuario u oferta no encontrados")
+    return {"status": "success", "data": {"estado": filas[0]["estado"], "ya_postulado": False}}
+
+
+@app.delete("/api/users/{user_id}/applications/{offer_id}")
+def withdraw_application(user_id: str, offer_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Retirar la postulación, mientras la empresa no haya tomado una decisión."""
+    _exigir_dueno(cuenta, user_id)
+    actual = postulaciones.estado_postulacion(user_id, offer_id)
+    if actual is None:
+        raise HTTPException(status_code=404, detail="No tienes una postulación a esta oferta")
+    if postulaciones.normalizar_estado(actual) not in postulaciones.ESTADOS_RETIRABLES:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta postulación ya tiene una decisión y no se puede retirar",
+        )
+    postulaciones.retirar_postulacion(user_id, offer_id)
+    return {"status": "success", "data": {"retirada": True}}
 
 
 

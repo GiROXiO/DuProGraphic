@@ -1,7 +1,8 @@
 import AffinityRingView from "./AffinityRingView";
 import SkillBadgeView from "./SkillBadgeView";
+import PostularButtonView from "./PostularButtonView";
 
-export default function JobCardView({ oferta }) {
+export default function JobCardView({ oferta, onPostulada }) {
   const meta = [oferta.modalidad, oferta.experiencia].filter(Boolean);
   const saltos = oferta.distancia;
 
@@ -50,6 +51,10 @@ export default function JobCardView({ oferta }) {
                 : "contactos ya postularon"
             }`}
         </p>
+
+        <div className="mt-4">
+          <PostularButtonView ofertaId={oferta.id} onPostulada={onPostulada} />
+        </div>
       </div>
     </article>
   );
