@@ -212,8 +212,8 @@ export default function AdminUsersView() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink-500">
-          {usuarios.length} usuarios. Eliminar uno borra su perfil y sus
-          relaciones del grafo y desactiva su acceso.
+          {usuarios.length} usuarios. Eliminar uno borra su perfil, sus
+          relaciones del grafo y su acceso.
         </p>
         {!creando && (
           <button

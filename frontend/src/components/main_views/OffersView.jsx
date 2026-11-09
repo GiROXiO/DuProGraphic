@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ShellView from "../nav_layout/ShellView";
 import OfferFormView from "../reusable/OfferFormView";
+import CandidatesPanelView from "../reusable/CandidatesPanelView";
 import api, { getUser } from "../../api";
 import useFetch from "../../useFetch";
 import { mensajeError } from "../../formErrors";
@@ -16,6 +17,7 @@ export default function OffersView() {
   const [lista, setLista] = useState(null);
   const [editando, setEditando] = useState(null); // null | "nueva" | id de oferta
   const [ocupada, setOcupada] = useState(null);
+  const [verCandidatos, setVerCandidatos] = useState(null); // id de la oferta con el panel abierto
   const [errorAccion, setErrorAccion] = useState("");
 
   const ofertas = lista ?? data ?? [];
@@ -161,6 +163,7 @@ export default function OffersView() {
                     >
                       Editar
                     </button>
+
                     <button
                       onClick={() => cambiarEstado(o)}
                       disabled={ocupada === o.id}
@@ -168,7 +171,27 @@ export default function OffersView() {
                     >
                       {abierta ? "Cerrar oferta" : "Reabrir oferta"}
                     </button>
+
+                    <button
+                      onClick={() =>
+                        setVerCandidatos(verCandidatos === o.id ? null : o.id)
+                      }
+                      aria-expanded={verCandidatos === o.id}
+                      className="rounded-xl bg-brand-50 px-4 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-100"
+                    >
+                      {verCandidatos === o.id
+                        ? "Ocultar candidatos"
+                        : `Candidatos (${o.postulaciones})`}
+                    </button>
                   </div>
+
+                  {verCandidatos === o.id && (
+                    <CandidatesPanelView
+                      key={o.id}
+                      companyId={user.entidad_id}
+                      oferta={o}
+                    />
+                  )}
                 </article>
               );
             })}

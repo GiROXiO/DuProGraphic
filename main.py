@@ -927,3 +927,49 @@ def admin_delete_project(project_id: str, cuenta: dict = Depends(cuenta_actual))
     if not gestion.eliminar_proyecto(project_id):
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
     return _ok(gestion.proyectos_admin())
+
+
+
+# --- Candidatos de una oferta (lado de la empresa) -----------------------------------
+
+class EstadoPostulacionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    estado: Literal["aplicado", "en revisión", "entrevista", "oferta", "aceptado", "rechazado"]
+
+
+def _exigir_oferta_de_la_empresa(cuenta: dict, company_id: str, offer_id: str) -> None:
+    _exigir_propietario(cuenta, ROL_EMPRESA, company_id)
+    if not analitica.empresa_publica_oferta(company_id, offer_id):
+        raise HTTPException(status_code=404, detail="Oferta no encontrada en tu empresa")
+
+
+@app.get("/api/companies/{company_id}/offers/{offer_id}/applications")
+def get_offer_applications(
+    company_id: str, offer_id: str, cuenta: dict = Depends(cuenta_actual)
+):
+    """Quiénes se postularon a la oferta, con afinidad y estado."""
+    _exigir_oferta_de_la_empresa(cuenta, company_id, offer_id)
+    return _ok(postulaciones.postulantes_oferta(company_id, offer_id))
+
+
+@app.put("/api/companies/{company_id}/offers/{offer_id}/applications/{user_id}")
+def update_application_status(
+    company_id: str,
+    offer_id: str,
+    user_id: str,
+    datos: EstadoPostulacionIn,
+    cuenta: dict = Depends(cuenta_actual),
+):
+    """La empresa mueve a la persona por las etapas del proceso. Aceptado y rechazado son finales."""
+    _exigir_oferta_de_la_empresa(cuenta, company_id, offer_id)
+    actual = postulaciones.estado_postulacion(user_id, offer_id)
+    if actual is None:
+        raise HTTPException(status_code=404, detail="Esa persona no se postuló a esta oferta")
+    actual = postulaciones.normalizar_estado(actual)
+    if actual in postulaciones.ESTADOS_FINALES and datos.estado != actual:
+        raise HTTPException(
+            status_code=409, detail="Esta postulación ya tiene una decisión final y no se puede cambiar"
+        )
+    postulaciones.cambiar_estado_postulacion(offer_id, user_id, datos.estado)
+    return _ok(postulaciones.postulantes_oferta(company_id, offer_id))

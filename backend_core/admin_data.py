@@ -93,20 +93,20 @@ def fijar_admin(usuario_id, es_admin):
 
 
 # --- Bajas ------------------------------------------------------------------------
-# Eliminar un perfil lo borra del grafo con todas sus relaciones, desactiva su cuenta
-# (no podrá iniciar sesión) y cierra sus sesiones. El correo queda libre para el
-# administrador (crear_perfil_con_acceso_admin reactiva la cuenta desactivada).
+# Eliminar un perfil lo borra del grafo con todas sus relaciones, borra también su cuenta
+# de acceso y cierra sus sesiones. Así el correo queda libre del todo: cualquiera puede
+# volver a registrarse con él, y el administrador también puede volver a crearlo.
 
 def eliminar_usuario(usuario_id):
     return escribir(
         """
         MATCH (u:Usuario {id: $id})
         OPTIONAL MATCH (c:Cuenta)-[:REPRESENTA_A]->(u)
-        SET c.activa = false, c.auth_version = coalesce(c.auth_version, 0) + 1
-        WITH u, collect(c.id) AS cuentas
-        OPTIONAL MATCH (s:Sesion) WHERE s.cuenta_id IN cuentas
+        WITH u, collect(c) AS cuentas
+        OPTIONAL MATCH (s:Sesion) WHERE s.cuenta_id IN [x IN cuentas | x.id]
         DELETE s
-        WITH DISTINCT u
+        WITH DISTINCT u, cuentas
+        FOREACH (c IN cuentas | DETACH DELETE c)
         DETACH DELETE u
         RETURN $id AS id
         """,
@@ -120,10 +120,11 @@ def eliminar_empresa(empresa_id):
         """
         MATCH (e:Empresa {id: $id})
         OPTIONAL MATCH (c:Cuenta)-[:REPRESENTA_A]->(e)
-        SET c.activa = false, c.auth_version = coalesce(c.auth_version, 0) + 1
-        WITH e, collect(c.id) AS cuentas
-        OPTIONAL MATCH (s:Sesion) WHERE s.cuenta_id IN cuentas
+        WITH e, collect(c) AS cuentas
+        OPTIONAL MATCH (s:Sesion) WHERE s.cuenta_id IN [x IN cuentas | x.id]
         DELETE s
+        WITH DISTINCT e, cuentas
+        FOREACH (c IN cuentas | DETACH DELETE c)
         WITH DISTINCT e
         OPTIONAL MATCH (e)-[:PUBLICA]->(o:Oferta)
         DETACH DELETE o

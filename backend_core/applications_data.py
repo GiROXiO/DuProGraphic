@@ -9,8 +9,15 @@ from backend_core.portal_common import consultar, escribir
 ESTADOS_RETIRABLES = {"aplicado", "en revisión", "entrevista", "entrevistado"}
 
 
+# Etapas del proceso de selección, en orden. Con aceptado o rechazado el proceso termina.
+ESTADOS_PROCESO = ("aplicado", "en revisión", "entrevista", "oferta", "aceptado", "rechazado")
+ESTADOS_FINALES = {"aceptado", "rechazado"}
+
+
 def normalizar_estado(estado):
-    return str(estado or "aplicado").strip().lower()
+    valor = str(estado or "aplicado").strip().lower()
+    # Los datos de ejemplo antiguos usan "entrevistado".
+    return "entrevista" if valor == "entrevistado" else valor
 
 
 def mis_postulaciones(usuario_id):
@@ -86,4 +93,51 @@ def retirar_postulacion(usuario_id, oferta_id):
         RETURN o.id AS id
         """,
         u=usuario_id, o=oferta_id,
+    )
+
+
+
+# --- Lado de la empresa: candidatos de una oferta ---------------------------------------
+
+def postulantes_oferta(empresa_id, oferta_id):
+    """Personas que se postularon a la oferta, con su afinidad y su estado en el proceso.
+
+    La afinidad sale del grafo: habilidades de la oferta que la persona tiene, las que le
+    faltan y cuántos de sus contactos ya trabajan en la empresa.
+    """
+    filas = consultar(
+        """
+        MATCH (emp:Empresa {id: $e})-[:PUBLICA]->(o:Oferta {id: $o})
+        MATCH (u:Usuario)-[r:POSTULA_A]->(o)
+        WITH emp, o, u, r,
+             [(o)-[:REQUIERE]->(h:Habilidad) | h] AS requeridas,
+             [(u)-[:TIENE_HABILIDAD]->(h:Habilidad) | h] AS poseidas
+        WITH emp, u, r, requeridas,
+             [h IN requeridas WHERE h IN poseidas] AS coincidencias
+        RETURN u.id AS id, u.nombre AS nombre, u.perfil_profesional AS titular,
+               u.ubicacion AS ubicacion,
+               coalesce(r.estado_proceso, 'aplicado') AS estado,
+               r.fecha_postulacion AS fecha,
+               [h IN coincidencias | h.nombre] AS habilidades_coincidentes,
+               [h IN requeridas WHERE NOT h IN coincidencias | h.nombre] AS habilidades_faltantes,
+               size(requeridas) AS total_requeridas,
+               COUNT { MATCH (u)-[:CONECTA_CON]-(c:Usuario)-[:TRABAJA_EN]->(emp) RETURN DISTINCT c } AS contactos_en_empresa
+        ORDER BY r.fecha_postulacion DESC, u.nombre
+        """,
+        e=empresa_id, o=oferta_id,
+    ) or []
+    for fila in filas:
+        fila["estado"] = normalizar_estado(fila["estado"])
+    return filas
+
+
+def cambiar_estado_postulacion(oferta_id, usuario_id, estado):
+    """Cambia la etapa de la postulación. [] si la persona no se postuló a esa oferta."""
+    return escribir(
+        """
+        MATCH (:Usuario {id: $u})-[r:POSTULA_A]->(:Oferta {id: $o})
+        SET r.estado_proceso = $estado, r.fecha_actualizacion = $fecha
+        RETURN r.estado_proceso AS estado
+        """,
+        u=usuario_id, o=oferta_id, estado=estado, fecha=date.today().isoformat(),
     )
