@@ -24,7 +24,7 @@ const ETIQUETAS = {
 const campo =
   "w-full rounded-xl border border-ink-100 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30";
 
-function Formulario({ perfil, companyId }) {
+export function Formulario({ perfil, companyId }) {
   const [v, setV] = useState({
     nombre: perfil.nombre ?? "",
     sector: perfil.sector ?? "",
@@ -55,7 +55,7 @@ function Formulario({ perfil, companyId }) {
       // Mantiene el nombre de la sesión al día (lo muestra la barra lateral).
       const token = getToken();
       const usuario = getUser();
-      if (token && usuario) {
+      if (token && usuario && usuario.entidad_id === companyId) {
         saveSession(token, { ...usuario, nombre: res.data.data.nombre });
       }
       setGuardado(true);

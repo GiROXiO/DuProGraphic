@@ -7,6 +7,7 @@ import {
   Users,
   Network,
   MessageSquare,
+  ShieldCheck,
   LogOut,
 } from "lucide-react";
 import api, { clearSession, getUser } from "../../api";
@@ -32,6 +33,7 @@ const ITEMS_POR_ROL = {
   administrador: [
     { to: "/", label: "Inicio", icon: Compass, end: true },
     { to: "/analytics", label: "Análisis", icon: Network },
+    { to: "/admin", label: "Administración", icon: ShieldCheck },
   ],
 };
 

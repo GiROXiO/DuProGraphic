@@ -14,6 +14,7 @@ import PersonView from "./components/main_views/PersonView";
 import OffersView from "./components/main_views/OffersView";
 import CompanyProfileView from "./components/main_views/CompanyProfileView";
 import RegisterView from "./components/main_views/RegisterView";
+import AdminView from "./components/main_views/AdminView";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -31,6 +32,7 @@ function App() {
           <Route path="/people/:id" element={<PersonView />} />
           <Route path="/offers" element={<OffersView />} />
           <Route path="/company" element={<CompanyProfileView />} />
+          <Route path="/admin" element={<AdminView />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -115,7 +115,7 @@ export default function ProfileFormView({ perfil, userId }) {
       // Mantiene el nombre de la sesión al día (lo muestra la barra lateral).
       const token = getToken();
       const usuario = getUser();
-      if (token && usuario) {
+      if (token && usuario && usuario.entidad_id === userId) {
         saveSession(token, { ...usuario, nombre: res.data.data.nombre });
       }
       setGuardado(true);

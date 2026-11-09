@@ -4,6 +4,7 @@ Ejecutar:  uvicorn main:app --reload --port 8000
 """
 
 import os
+import uuid
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -17,6 +18,7 @@ from backend_core.auth import (
     ROL_EMPRESA,
     ROL_USUARIO,
     autenticar,
+    crear_perfil_con_acceso_admin,
     crear_sesion_persistente,
     registrar_cuenta,
     restaurar_sesion_persistente,
@@ -28,6 +30,7 @@ from backend_core import network_data as red
 from backend_core.company_data import ofertas_empresa
 from backend_core import applications_data as postulaciones
 from backend_core import links_data as vinculos
+from backend_core import admin_data as gestion
 from backend_core import company_data as empresas
 from backend_core.user_data import (
     actualizar_perfil,
@@ -142,8 +145,9 @@ class RegistroIn(BaseModel):
 # Cualquier correo ya presente en la base se rechaza igual, sin pistas sobre el motivo.
 _CORREO_REPETIDO = {
     "correo_existente", "codigo_requerido", "perfil_ya_vinculado",
-    "correo_perfil_usuario", "correo_perfil_empresa",
+    "correo_perfil_usuario", "correo_perfil_empresa", "correo_perfil_existente",
 }
+
 _ERRORES_REGISTRO = {
     "correo_invalido": "Escribe un correo válido",
     "password_corto": "La contraseña debe tener al menos 10 caracteres",
@@ -744,3 +748,182 @@ def set_company_offer_status(
     if not empresas.cambiar_estado_oferta(company_id, offer_id, datos.estado):
         raise HTTPException(status_code=404, detail="Oferta no encontrada en tu empresa")
     return _ofertas_respuesta(company_id)
+
+
+
+# --- Administración -----------------------------------------------------------------
+# Solo cuentas con rol administrador. Para editar perfiles, empresas y ofertas existentes
+# el administrador usa los mismos endpoints que sus dueños (_exigir_propietario lo permite).
+
+def _solo_admin(cuenta: dict) -> None:
+    if cuenta["rol"] != ROL_ADMIN:
+        raise HTTPException(status_code=403, detail="Solo el administrador puede gestionar esto")
+
+
+class CuentaNuevaIn(BaseModel):
+    """Datos mínimos para crear un perfil con acceso; el resto lo completa su dueño."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nombre: _texto(140) = Field(min_length=1)
+    correo: _texto(254)
+    password: str = Field(min_length=10, max_length=256)
+
+    @field_validator("password")
+    @classmethod
+    def _password_no_vacia(cls, valor):
+        if not valor.strip():
+            raise ValueError("La contraseña no puede ser solo espacios")
+        return valor
+
+
+class UsuarioNuevoIn(CuentaNuevaIn):
+    perfil_profesional: _texto(MAX_PROFILE_LENGTHS["perfil_profesional"]) = Field(min_length=1)
+    universidad: _texto(MAX_PROFILE_LENGTHS["universidad"]) | None = None
+
+
+class EmpresaNuevaIn(CuentaNuevaIn):
+    sector: _texto(MAX_PROFILE_LENGTHS["sector"]) = Field(min_length=1)
+
+
+class PermisoAdminIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    es_admin: bool
+
+
+class ProyectoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    nombre: str = Field(min_length=1, max_length=140)
+    descripcion: str | None = Field(default=None, max_length=600)
+
+
+def _alta_con_acceso(rol: str, prefijo: str, datos: CuentaNuevaIn) -> None:
+    perfil = datos.model_dump(exclude={"correo", "password"})
+    estado, _ = crear_perfil_con_acceso_admin(
+        rol, datos.correo, datos.password, prefijo + uuid.uuid4().hex[:10].upper(), perfil
+    )
+    if estado == "creada":
+        return
+    if estado in _CORREO_REPETIDO:
+        raise HTTPException(status_code=409, detail="Ese correo ya está registrado")
+    if estado == "id_existente":
+        raise HTTPException(status_code=409, detail="Intenta de nuevo")
+    if estado == "error_bd":
+        raise HTTPException(status_code=503, detail="No se pudo conectar con Neo4j")
+    raise HTTPException(
+        status_code=422, detail=_ERRORES_REGISTRO.get(estado, "Revisa los datos del formulario")
+    )
+
+
+# Usuarios
+
+@app.get("/api/admin/users")
+def admin_list_users(cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    return _ok(gestion.usuarios_admin())
+
+
+@app.post("/api/admin/users", status_code=201)
+def admin_create_user(datos: UsuarioNuevoIn, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    _alta_con_acceso(ROL_USUARIO, "U", datos)
+    return _ok(gestion.usuarios_admin())
+
+
+@app.put("/api/admin/users/{user_id}/admin")
+def admin_set_admin(user_id: str, datos: PermisoAdminIn, cuenta: dict = Depends(cuenta_actual)):
+    """Concede o retira el permiso de administrador a la cuenta de un usuario."""
+    _solo_admin(cuenta)
+    destino = gestion.cuenta_de_usuario(user_id)
+    if not destino or not destino["activa"]:
+        raise HTTPException(status_code=404, detail="Ese usuario no tiene una cuenta activa")
+    if not datos.es_admin and destino["cuenta_id"] == cuenta["id"]:
+        raise HTTPException(
+            status_code=409, detail="No puedes quitarte a ti mismo el permiso de administrador"
+        )
+    gestion.fijar_admin(user_id, datos.es_admin)
+    return _ok(gestion.usuarios_admin())
+
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    destino = gestion.cuenta_de_usuario(user_id)
+    if destino and destino["cuenta_id"] == cuenta["id"]:
+        raise HTTPException(status_code=409, detail="No puedes eliminar tu propia cuenta")
+    if not gestion.eliminar_usuario(user_id):
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return _ok(gestion.usuarios_admin())
+
+
+# Empresas
+
+@app.get("/api/admin/companies")
+def admin_list_companies(cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    return _ok(gestion.empresas_admin())
+
+
+@app.post("/api/admin/companies", status_code=201)
+def admin_create_company(datos: EmpresaNuevaIn, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    _alta_con_acceso(ROL_EMPRESA, "E", datos)
+    return _ok(gestion.empresas_admin())
+
+
+@app.delete("/api/admin/companies/{company_id}")
+def admin_delete_company(company_id: str, cuenta: dict = Depends(cuenta_actual)):
+    """Elimina la empresa junto con sus ofertas."""
+    _solo_admin(cuenta)
+    if not gestion.eliminar_empresa(company_id):
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return _ok(gestion.empresas_admin())
+
+
+# Ofertas (se publican y editan con los endpoints de la empresa; aquí se listan y borran)
+
+@app.get("/api/admin/offers")
+def admin_list_offers(cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    return _ok(gestion.ofertas_admin())
+
+
+@app.delete("/api/admin/offers/{offer_id}")
+def admin_delete_offer(offer_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    if not gestion.eliminar_oferta(offer_id):
+        raise HTTPException(status_code=404, detail="Oferta no encontrada")
+    return _ok(gestion.ofertas_admin())
+
+
+# Proyectos
+
+@app.get("/api/admin/projects")
+def admin_list_projects(cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    return _ok(gestion.proyectos_admin())
+
+
+@app.post("/api/admin/projects", status_code=201)
+def admin_create_project(datos: ProyectoIn, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    gestion.crear_proyecto(datos.model_dump())
+    return _ok(gestion.proyectos_admin())
+
+
+@app.put("/api/admin/projects/{project_id}")
+def admin_update_project(project_id: str, datos: ProyectoIn, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    if not gestion.actualizar_proyecto(project_id, datos.model_dump()):
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    return _ok(gestion.proyectos_admin())
+
+
+@app.delete("/api/admin/projects/{project_id}")
+def admin_delete_project(project_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _solo_admin(cuenta)
+    if not gestion.eliminar_proyecto(project_id):
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    return _ok(gestion.proyectos_admin())
