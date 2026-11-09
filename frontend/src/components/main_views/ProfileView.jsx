@@ -1,6 +1,8 @@
 import ShellView from "../nav_layout/ShellView";
 import ProfileFormView from "../reusable/ProfileFormView";
 import SkillsEditorView from "../reusable/SkillsEditorView";
+import ExperienceEditorView from "../reusable/ExperienceEditorView";
+import ProjectsEditorView from "../reusable/ProjectsEditorView";
 import { getUser } from "../../api";
 import useFetch from "../../useFetch";
 
@@ -21,7 +23,8 @@ export default function ProfileView() {
           Mi perfil
         </h1>
         <p className="mt-1 text-sm text-ink-500">
-          Edita tu información y tus habilidades. Solo tú puedes modificarlas.
+          Edita tu información, tus habilidades, tu experiencia y tus proyectos.
+          Solo tú puedes modificarlas.
         </p>
       </header>
 
@@ -38,6 +41,8 @@ export default function ProfileView() {
             <ProfileFormView perfil={perfil} userId={user.entidad_id} />
           )}
           <SkillsEditorView userId={user.entidad_id} />
+          <ExperienceEditorView userId={user.entidad_id} />
+          <ProjectsEditorView userId={user.entidad_id} />
         </div>
       )}
     </ShellView>

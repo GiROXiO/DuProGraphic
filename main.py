@@ -26,6 +26,7 @@ from backend_core import analytics_data as analitica
 from backend_core import network_data as red
 from backend_core.company_data import ofertas_empresa
 from backend_core import applications_data as postulaciones
+from backend_core import links_data as vinculos
 from backend_core import company_data as empresas
 from backend_core.user_data import (
     actualizar_perfil,
@@ -311,6 +312,80 @@ def get_public_profile(person_id: str, cuenta: dict = Depends(cuenta_actual)):
             relacion = red.estado_relacion(yo, person_id)
             comunes = red.contactos_comunes(yo, person_id)
     return {"status": "success", "data": {**perfil, "relacion": relacion, "contactos_en_comun": comunes}}
+
+# --- Vínculos del usuario: empresas y proyectos -----------------------------------
+# Versión simple: el usuario declara sus vínculos sin aprobación de la empresa.
+
+class ExperienciaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    cargo: str = Field(min_length=1, max_length=120)
+    periodo: str | None = Field(default=None, max_length=80)
+    actual: bool = False
+
+
+class ParticipacionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    rol: str = Field(min_length=1, max_length=120)
+
+
+@app.get("/api/users/{user_id}/experience")
+def get_user_experience(user_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    return {"status": "success", "data": vinculos.experiencia_usuario(user_id)}
+
+
+@app.put("/api/users/{user_id}/experience/{company_id}")
+def put_user_experience(
+    user_id: str, company_id: str, datos: ExperienciaIn, cuenta: dict = Depends(cuenta_actual)
+):
+    """Añade la empresa a tu experiencia o actualiza el cargo, el periodo y si es actual."""
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    if not vinculos.guardar_experiencia(user_id, company_id, datos.model_dump()):
+        raise HTTPException(status_code=404, detail="Usuario o empresa no encontrados")
+    return {"status": "success", "data": vinculos.experiencia_usuario(user_id)}
+
+
+@app.delete("/api/users/{user_id}/experience/{company_id}")
+def delete_user_experience(user_id: str, company_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    if not vinculos.quitar_experiencia(user_id, company_id):
+        raise HTTPException(status_code=404, detail="No tienes esa empresa en tu experiencia")
+    return {"status": "success", "data": vinculos.experiencia_usuario(user_id)}
+
+
+@app.get("/api/projects")
+def get_project_catalog(cuenta: dict = Depends(cuenta_actual)):
+    """Catálogo de proyectos (lo puede leer cualquier cuenta con sesión)."""
+    return {"status": "success", "data": vinculos.catalogo_proyectos()}
+
+
+@app.get("/api/users/{user_id}/projects")
+def get_user_projects(user_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    return {"status": "success", "data": vinculos.proyectos_usuario(user_id)}
+
+
+@app.put("/api/users/{user_id}/projects/{project_id}")
+def put_user_project(
+    user_id: str, project_id: str, datos: ParticipacionIn, cuenta: dict = Depends(cuenta_actual)
+):
+    """Añade el proyecto a tu trayectoria o actualiza tu rol en él."""
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    if not vinculos.guardar_proyecto(user_id, project_id, datos.rol):
+        raise HTTPException(status_code=404, detail="Usuario o proyecto no encontrados")
+    return {"status": "success", "data": vinculos.proyectos_usuario(user_id)}
+
+
+@app.delete("/api/users/{user_id}/projects/{project_id}")
+def delete_user_project(user_id: str, project_id: str, cuenta: dict = Depends(cuenta_actual)):
+    _exigir_propietario(cuenta, ROL_USUARIO, user_id)
+    if not vinculos.quitar_proyecto(user_id, project_id):
+        raise HTTPException(status_code=404, detail="No participas en ese proyecto")
+    return {"status": "success", "data": vinculos.proyectos_usuario(user_id)}
+
+
 
 # --- Postulaciones a ofertas ------------------------------------------------------
 
