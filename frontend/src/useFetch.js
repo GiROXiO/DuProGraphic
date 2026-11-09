@@ -1,15 +1,31 @@
 import { useEffect, useState } from "react";
 import api from "./api";
 
-// Carga GET url y devuelve { data, loading, error }. Con url null no hace nada.
+// Carga GET url y devuelve { data, loading, error, refetch }.
 export default function useFetch(url) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(Boolean(url));
   const [error, setError] = useState("");
+  const [version, setVersion] = useState(0);
+
+  const refetch = () => setVersion((actual) => actual + 1);
 
   useEffect(() => {
-    if (!url) return;
     let cancelado = false;
+
+    if (!url) {
+      setData(null);
+      setLoading(false);
+      setError("");
+      return () => {
+        cancelado = true;
+      };
+    }
+
+    // Evita presentar una lista vieja como si fuera el resultado actualizado.
+    setData(null);
+    setLoading(true);
+    setError("");
 
     api
       .get(url)
@@ -18,6 +34,7 @@ export default function useFetch(url) {
       })
       .catch((err) => {
         if (!cancelado) {
+          setData(null);
           setError(
             err.response?.data?.detail || "No se pudo cargar la información",
           );
@@ -30,7 +47,7 @@ export default function useFetch(url) {
     return () => {
       cancelado = true;
     };
-  }, [url]);
+  }, [url, version]);
 
-  return { data, loading, error };
+  return { data, loading, error, refetch };
 }

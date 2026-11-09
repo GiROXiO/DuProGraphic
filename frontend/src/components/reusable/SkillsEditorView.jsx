@@ -15,7 +15,12 @@ export default function SkillsEditorView({ userId }) {
     loading,
     error: errorCarga,
   } = useFetch(`/api/users/${userId}/skills`);
-  const { data: catalogo } = useFetch("/api/skills");
+  const {
+    data: catalogo,
+    loading: cargandoCatalogo,
+    error: errorCatalogo,
+    refetch: recargarCatalogo,
+  } = useFetch("/api/skills");
 
   // La lista local reemplaza a la inicial después de cada cambio (el backend devuelve la lista nueva).
   const [lista, setLista] = useState(null);
@@ -75,6 +80,29 @@ export default function SkillsEditorView({ userId }) {
         <p className="text-sm text-ink-500">Cargando habilidades...</p>
       )}
       {errorCarga && <p className="text-sm text-red-600">{errorCarga}</p>}
+      {cargandoCatalogo && (
+        <p className="text-sm text-ink-500">Cargando catálogo de habilidades...</p>
+      )}
+      {errorCatalogo && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          <span>No se pudo cargar el catálogo; no es posible añadir habilidades por ahora.</span>
+          <button
+            type="button"
+            onClick={recargarCatalogo}
+            className="font-semibold underline"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+      {!cargandoCatalogo && !errorCatalogo && catalogo?.length === 0 && (
+        <p className="text-sm text-ink-500">
+          No hay habilidades disponibles en el catálogo.
+        </p>
+      )}
 
       {!loading && !errorCarga && actuales.length === 0 && (
         <p className="text-sm text-ink-500">
@@ -162,7 +190,7 @@ export default function SkillsEditorView({ userId }) {
           </button>
         </form>
       ) : (
-        catalogo && (
+        catalogo?.length > 0 && (
           <p className="border-t border-ink-100 pt-5 text-sm text-ink-500">
             Ya añadiste todas las habilidades del catálogo.
           </p>

@@ -11,7 +11,12 @@ const campo =
 
 export default function AdminOffersView() {
   const { data, loading, error: errorCarga } = useFetch("/api/admin/offers");
-  const { data: empresas } = useFetch("/api/lookups/companies");
+  const {
+    data: empresas,
+    loading: cargandoEmpresas,
+    error: errorEmpresas,
+    refetch: recargarEmpresas,
+  } = useFetch("/api/lookups/companies");
   const [lista, setLista] = useState(null);
   // null | { empresaId, oferta: null (nueva) o el detalle de la oferta }
   const [formulario, setFormulario] = useState(null);
@@ -85,8 +90,32 @@ export default function AdminOffersView() {
             >
               ¿En nombre de qué empresa?
             </label>
+            {cargandoEmpresas && (
+              <p className="mb-2 text-sm text-ink-500">Cargando empresas...</p>
+            )}
+            {errorEmpresas && (
+              <div
+                role="alert"
+                className="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                <span>No se pudo cargar la lista de empresas.</span>
+                <button
+                  type="button"
+                  onClick={recargarEmpresas}
+                  className="font-semibold underline"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+            {!cargandoEmpresas && !errorEmpresas && empresas?.length === 0 && (
+              <p className="mb-2 text-sm text-ink-500">
+                No hay empresas disponibles para publicar ofertas.
+              </p>
+            )}
             <select
               id="of-empresa"
+              disabled={cargandoEmpresas || Boolean(errorEmpresas) || !empresas?.length}
               value={empresaNueva}
               onChange={(e) => setEmpresaNueva(e.target.value)}
               className={campo}
@@ -100,7 +129,7 @@ export default function AdminOffersView() {
             </select>
           </div>
           <button
-            disabled={!empresaNueva}
+            disabled={!empresaNueva || cargandoEmpresas || Boolean(errorEmpresas)}
             onClick={() => {
               setFormulario({ empresaId: empresaNueva, oferta: null });
               setEligiendo(false);

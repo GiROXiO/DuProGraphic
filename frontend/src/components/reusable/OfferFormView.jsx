@@ -28,7 +28,12 @@ export default function OfferFormView({
   onGuardada,
   onCancelar,
 }) {
-  const { data: catalogo, loading: cargandoCatalogo } = useFetch("/api/skills");
+  const {
+    data: catalogo,
+    loading: cargandoCatalogo,
+    error: errorCatalogo,
+    refetch: recargarCatalogo,
+  } = useFetch("/api/skills");
 
   const [titulo, setTitulo] = useState(oferta?.titulo ?? "");
   const [descripcion, setDescripcion] = useState(oferta?.descripcion ?? "");
@@ -182,6 +187,29 @@ export default function OfferFormView({
         </p>
         {cargandoCatalogo && (
           <p className="text-sm text-ink-500">Cargando catálogo...</p>
+        )}
+        {errorCatalogo && (
+          <div
+            role="alert"
+            className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          >
+            <span>
+              No se pudo cargar el catálogo. No podrás revisar ni cambiar las
+              habilidades; una oferta nueva se guardará sin ellas.
+            </span>
+            <button
+              type="button"
+              onClick={recargarCatalogo}
+              className="font-semibold underline"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
+        {!cargandoCatalogo && !errorCatalogo && catalogo?.length === 0 && (
+          <p className="mb-3 text-sm text-ink-500">
+            No hay habilidades disponibles en el catálogo.
+          </p>
         )}
         <div className="flex flex-wrap gap-2">
           {(catalogo ?? []).map((h) => {

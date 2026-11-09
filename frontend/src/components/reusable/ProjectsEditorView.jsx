@@ -138,7 +138,12 @@ export default function ProjectsEditorView({ userId }) {
     loading,
     error: errorCarga,
   } = useFetch(`/api/users/${userId}/projects`);
-  const { data: catalogo } = useFetch("/api/projects");
+  const {
+    data: catalogo,
+    loading: cargandoCatalogo,
+    error: errorCatalogo,
+    refetch: recargarCatalogo,
+  } = useFetch("/api/projects");
 
   // Tras cada cambio la API devuelve la lista completa y reemplaza a la inicial.
   const [lista, setLista] = useState(null);
@@ -182,6 +187,29 @@ export default function ProjectsEditorView({ userId }) {
 
       {loading && <p className="text-sm text-ink-500">Cargando...</p>}
       {errorCarga && <p className="text-sm text-red-600">{errorCarga}</p>}
+      {cargandoCatalogo && (
+        <p className="text-sm text-ink-500">Cargando proyectos disponibles...</p>
+      )}
+      {errorCatalogo && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          <span>No se pudo cargar el catálogo; no es posible añadir proyectos por ahora.</span>
+          <button
+            type="button"
+            onClick={recargarCatalogo}
+            className="font-semibold underline"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+      {!cargandoCatalogo && !errorCatalogo && catalogo?.length === 0 && (
+        <p className="text-sm text-ink-500">
+          No hay proyectos disponibles en el catálogo.
+        </p>
+      )}
       {!loading && !errorCarga && actuales.length === 0 && (
         <p className="text-sm text-ink-500">
           Aún no participas en ningún proyecto.
@@ -242,7 +270,7 @@ export default function ProjectsEditorView({ userId }) {
           </div>
         </form>
       ) : (
-        catalogo && (
+        catalogo?.length > 0 && (
           <p className="border-t border-ink-100 pt-5 text-sm text-ink-500">
             Ya participas en todos los proyectos disponibles.
           </p>

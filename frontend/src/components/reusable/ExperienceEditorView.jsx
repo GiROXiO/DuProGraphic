@@ -172,7 +172,12 @@ export default function ExperienceEditorView({ userId }) {
     loading,
     error: errorCarga,
   } = useFetch(`/api/users/${userId}/experience`);
-  const { data: empresas } = useFetch("/api/lookups/companies");
+  const {
+    data: empresas,
+    loading: cargandoEmpresas,
+    error: errorEmpresas,
+    refetch: recargarEmpresas,
+  } = useFetch("/api/lookups/companies");
 
   // Tras cada cambio la API devuelve la lista completa y reemplaza a la inicial.
   const [lista, setLista] = useState(null);
@@ -227,6 +232,29 @@ export default function ExperienceEditorView({ userId }) {
 
       {loading && <p className="text-sm text-ink-500">Cargando...</p>}
       {errorCarga && <p className="text-sm text-red-600">{errorCarga}</p>}
+      {cargandoEmpresas && (
+        <p className="text-sm text-ink-500">Cargando empresas disponibles...</p>
+      )}
+      {errorEmpresas && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          <span>No se pudo cargar el catálogo; no es posible añadir empresas por ahora.</span>
+          <button
+            type="button"
+            onClick={recargarEmpresas}
+            className="font-semibold underline"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+      {!cargandoEmpresas && !errorEmpresas && empresas?.length === 0 && (
+        <p className="text-sm text-ink-500">
+          No hay empresas disponibles en el catálogo.
+        </p>
+      )}
       {!loading && !errorCarga && actuales.length === 0 && (
         <p className="text-sm text-ink-500">
           Aún no has añadido ninguna empresa.
@@ -303,7 +331,7 @@ export default function ExperienceEditorView({ userId }) {
           </div>
         </form>
       ) : (
-        empresas && (
+        empresas?.length > 0 && (
           <p className="border-t border-ink-100 pt-5 text-sm text-ink-500">
             Ya añadiste todas las empresas disponibles.
           </p>
