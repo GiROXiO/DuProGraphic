@@ -13,6 +13,7 @@ import NetworkView from "./components/main_views/NetworkView";
 import PersonView from "./components/main_views/PersonView";
 import OffersView from "./components/main_views/OffersView";
 import CompanyProfileView from "./components/main_views/CompanyProfileView";
+import RegisterView from "./components/main_views/RegisterView";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/login" element={<LoginView />} />
+        <Route path="/register" element={<RegisterView />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<FeedView />} />
           <Route path="/jobs" element={<JobsView />} />

@@ -4,12 +4,12 @@ Ejecutar:  uvicorn main:app --reload --port 8000
 """
 
 import os
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from backend_core.auth import (
     MAX_PROFILE_LENGTHS,
@@ -18,6 +18,7 @@ from backend_core.auth import (
     ROL_USUARIO,
     autenticar,
     crear_sesion_persistente,
+    registrar_cuenta,
     restaurar_sesion_persistente,
     revocar_sesion_persistente,
     url_http_valida,
@@ -112,6 +113,77 @@ def login(request: LoginRequest):
         "expira_epoch": sesion["expira_epoch"],
     }
 
+def _texto(maximo):
+    return Annotated[str, StringConstraints(strip_whitespace=True, max_length=maximo)]
+
+
+class RegistroIn(BaseModel):
+    """Registro público. Solo personas y empresas: el rol administrador no se pide aquí."""
+
+    # Sin str_strip_whitespace global: la contraseña no se debe recortar.
+    model_config = ConfigDict(extra="forbid")
+
+    rol: Literal["usuario", "empresa"]
+    correo: _texto(254)
+    password: str = Field(min_length=10, max_length=256)
+    nombre: _texto(140) = Field(min_length=1)
+    perfil_profesional: _texto(MAX_PROFILE_LENGTHS["perfil_profesional"]) | None = None  # usuario
+    universidad: _texto(MAX_PROFILE_LENGTHS["universidad"]) | None = None  # usuario
+    sector: _texto(MAX_PROFILE_LENGTHS["sector"]) | None = None  # empresa
+
+    @field_validator("password")
+    @classmethod
+    def _password_no_vacia(cls, valor):
+        if not valor.strip():
+            raise ValueError("La contraseña no puede ser solo espacios")
+        return valor
+
+
+# Cualquier correo ya presente en la base se rechaza igual, sin pistas sobre el motivo.
+_CORREO_REPETIDO = {
+    "correo_existente", "codigo_requerido", "perfil_ya_vinculado",
+    "correo_perfil_usuario", "correo_perfil_empresa",
+}
+_ERRORES_REGISTRO = {
+    "correo_invalido": "Escribe un correo válido",
+    "password_corto": "La contraseña debe tener al menos 10 caracteres",
+    "password_largo": "La contraseña es demasiado larga",
+    "nombre_vacio": "El nombre es obligatorio",
+    "perfil_incompleto": "Completa tu titular profesional (persona) o el sector (empresa)",
+    "url_invalida": "El enlace debe comenzar con http:// o https://",
+    "datos_invalidos": "Revisa los datos: algún campo no es válido",
+}
+
+
+@app.post("/api/auth/register", status_code=201)
+def register(datos: RegistroIn):
+    """Crea una cuenta nueva y la deja con la sesión iniciada."""
+    estado, cuenta = registrar_cuenta(
+        datos.rol,
+        datos.correo,
+        datos.password,
+        datos.model_dump(exclude={"rol", "correo", "password"}),
+        codigo_activacion="",  # el registro público nunca reclama perfiles existentes
+    )
+    if estado in _CORREO_REPETIDO:
+        raise HTTPException(status_code=409, detail="Ese correo ya está registrado")
+    if estado in _ERRORES_REGISTRO:
+        raise HTTPException(status_code=422, detail=_ERRORES_REGISTRO[estado])
+    if estado == "error_bd":
+        raise HTTPException(status_code=503, detail="No se pudo conectar con Neo4j")
+    if estado != "creada":
+        raise HTTPException(status_code=400, detail="No se pudo crear la cuenta")
+
+    cuenta = {**cuenta, "auth_version": 0}
+    sesion = crear_sesion_persistente(cuenta)
+    if not sesion:
+        raise HTTPException(status_code=503, detail="Cuenta creada, pero no se pudo iniciar sesión")
+    return {
+        "status": "success",
+        "data": cuenta,
+        "token": sesion["token"],
+        "expira_epoch": sesion["expira_epoch"],
+    }
 
 @app.get("/api/auth/me")
 def me(cuenta: dict = Depends(cuenta_actual)):

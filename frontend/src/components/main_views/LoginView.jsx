@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api, { saveSession } from "../../api";
 import { Briefcase, User, Shield, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import BrandMarkView from "../reusable/BrandMarkView";
@@ -217,6 +217,15 @@ export default function LoginView() {
               {cargando ? "Ingresando..." : "Entrar"}
             </button>
           </form>
+          <p className="mt-6 text-center text-sm text-ink-500">
+            ¿No tienes cuenta?{" "}
+            <Link
+              to="/register"
+              className="font-semibold text-brand-700 hover:underline"
+            >
+              Crear cuenta
+            </Link>
+          </p>
         </div>
       </div>
     </div>

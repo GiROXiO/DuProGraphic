@@ -11,6 +11,7 @@ import logging
 from urllib.parse import urlsplit
 from threading import Lock
 from datetime import datetime, timedelta, timezone
+from neo4j.exceptions import ConstraintError
 
 from backend_core.connection import get_db_connection
 
@@ -363,7 +364,12 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
 
         with driver.session() as session:
             return session.execute_write(crear)
+    except ConstraintError:
+        # Dos registros simultáneos con el mismo correo: la restricción única de Neo4j
+        # rechaza al segundo. Es un correo repetido, no un fallo de la base.
+        return "correo_existente", None
     except Exception:
+        logger.exception("Error inesperado en registrar_cuenta")
         return "error_bd", None
 
 
