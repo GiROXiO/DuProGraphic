@@ -7,12 +7,15 @@ import re
 import secrets
 import uuid
 import time
+import logging
 from urllib.parse import urlsplit
 from threading import Lock
 from datetime import datetime, timedelta, timezone
+from neo4j.exceptions import ConstraintError
 
 from backend_core.connection import get_db_connection
 
+logger = logging.getLogger(__name__)
 
 ROL_USUARIO = "usuario"
 ROL_EMPRESA = "empresa"
@@ -361,7 +364,12 @@ def registrar_cuenta(rol, correo, password, perfil, codigo_activacion=""):
 
         with driver.session() as session:
             return session.execute_write(crear)
+    except ConstraintError:
+        # Dos registros simultáneos con el mismo correo: la restricción única de Neo4j
+        # rechaza al segundo. Es un correo repetido, no un fallo de la base.
+        return "correo_existente", None
     except Exception:
+        logger.exception("Error inesperado en registrar_cuenta")
         return "error_bd", None
 
 
@@ -594,7 +602,10 @@ def autenticar(correo, password, rol_esperado):
             "entidad_id": registro["entidad_id"],
             "nombre": registro["nombre"],
         }
+    except ConnectionError:
+        raise  # que main.py lo convierta en 503
     except Exception:
+        logger.exception("Error inesperado en autenticar")
         return None
 
 

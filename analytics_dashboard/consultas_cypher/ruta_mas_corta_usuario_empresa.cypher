@@ -5,4 +5,6 @@ MATCH (empresa:Empresa {id: $empresa_id})
 MATCH ruta = shortestPath((usuario)-[:CONECTA_CON|TRABAJA_EN|TIENE_HABILIDAD|PARTICIPA_EN|PUBLICA|REQUIERE|POSTULA_A|SIGUE_A|USA_TECNOLOGIA*..6]-(empresa))
 RETURN
   [n IN nodes(ruta) | coalesce(n.nombre, n.titulo, n.id)] AS ruta,
+  [n IN nodes(ruta) | labels(n)[0]] AS tipos,
+  [r IN relationships(ruta) | type(r)] AS relaciones,
   length(ruta) AS saltos;

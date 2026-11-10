@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+/* Paleta propia de DuProGraphic: tinta (azul noche), marca (violeta) y señal (verde menta).
+   Tailwind genera clases como bg-ink-950, text-brand-600 o bg-signal-50. */
+@theme {
+  --color-ink-950: #0d0f1a;
+  --color-ink-900: #151a2e;
+  --color-ink-700: #2b3354;
+  --color-ink-500: #5b6488;
+  --color-ink-300: #b4bad3;
+  --color-ink-100: #e6e8f2;
+
+  --color-brand-50: #f0edff;
+  --color-brand-100: #e0d9ff;
+  --color-brand-500: #7c5cff;
+  --color-brand-600: #6844f0;
+  --color-brand-700: #5632d6;
+
+  --color-signal-50: #e6fcf5;
+  --color-signal-400: #2be0b0;
+  --color-signal-600: #0ea37c;
+
+  --color-paper: #f5f4fa;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink-900);
+}
